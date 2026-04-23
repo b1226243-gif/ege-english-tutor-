@@ -28,6 +28,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       })
     : undefined,
   session: { strategy: "jwt" },
+  // Propagate the user id through the JWT so server-side `auth()` gives us
+  // `session.user.id` — without this, Credentials logins yield a session
+  // with only name/email/image, breaking any route that scopes work by
+  // user id (POST /api/grammar/answer, /api/grammar/explain, /api/chat).
+  callbacks: {
+    ...authConfig.callbacks,
+    async jwt({ token, user }) {
+      if (user?.id) token.sub = user.id;
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user && token?.sub) {
+        session.user.id = token.sub;
+      }
+      return session;
+    },
+  },
   providers: [
     ...authConfig.providers,
     Credentials({
