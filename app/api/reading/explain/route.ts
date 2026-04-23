@@ -5,27 +5,28 @@ import { z } from "zod";
 
 import { auth } from "@/auth";
 import { textStreamToResponseWithFallback } from "@/lib/ai/stream";
-import { getItemWithAnswer } from "@/lib/grammar/persistence";
-import { GRAMMAR_EXPLAIN_PROMPT } from "@/lib/prompts";
+import { READING_EXPLAIN_PROMPT } from "@/lib/prompts";
+import { getReadingItemWithAnswer } from "@/lib/reading/persistence";
 
 export const maxDuration = 30;
 
 const BodySchema = z.object({
   itemId: z.string().uuid(),
-  studentAnswer: z.string().min(0),
+  /** 0-based option index the student picked. */
+  choice: z.number().int().min(0),
   correct: z.boolean(),
 });
 
 /**
- * POST /api/grammar/explain
+ * POST /api/reading/explain
  *
- * Streams a Socratic explanation for a single grammar item using GPT-4o.
- * Called after the auto-grader has already responded via
- * /api/grammar/answer, so the UI can show an instant right/wrong banner
- * and progressively fill in the "why".
+ * Streams a Socratic discussion of a reading MC answer using GPT-4o.
+ * Called after /api/reading/answer has already scored and persisted, so
+ * the UI can show an instant verdict and progressively fill in the "why".
  *
- * Returns a plain text stream (not the AI SDK's message envelope) so the
- * client can consume it with a simple ReadableStream reader.
+ * On error, the stream body ends with a Markdown `⚠` line describing the
+ * underlying failure (see `lib/ai/stream.ts`) — the UI never sees a
+ * silent 200-with-empty-body response.
  */
 export async function POST(req: Request) {
   const session = await auth();
@@ -57,33 +58,30 @@ export async function POST(req: Request) {
     );
   }
 
-  const item = await getItemWithAnswer(parsed.data.itemId);
+  const item = await getReadingItemWithAnswer(parsed.data.itemId);
   if (!item) {
     return NextResponse.json({ error: "Item not found" }, { status: 404 });
   }
 
   const payload = item.payload;
-  const correctDisplay =
-    payload.type === "lexical_mc"
-      ? `${String.fromCharCode(65 + payload.answer)} — ${payload.options[payload.answer]}`
-      : payload.answer;
-
-  const hint =
-    payload.type === "transform"
-      ? payload.hint
-      : payload.type === "word_formation"
-        ? payload.pos
-        : null;
+  const letter = (idx: number) => String.fromCharCode(65 + idx);
+  const studentChoiceInRange =
+    parsed.data.choice >= 0 && parsed.data.choice < payload.options.length;
+  const studentDisplay = studentChoiceInRange
+    ? `${letter(parsed.data.choice)} — ${payload.options[parsed.data.choice]}`
+    : "(не выбрано)";
+  const correctDisplay = `${letter(payload.answer)} — ${payload.options[payload.answer]}`;
 
   const context = [
-    `Task type: ${payload.type}.`,
-    `Prompt: ${item.stimulusText}`,
-    payload.type === "lexical_mc"
-      ? `Options (A/B/C/D): ${payload.options.join(" / ")}.`
-      : `Base: ${payload.base}.`,
-    hint ? `Hint: ${hint}.` : null,
-    `Student answered: "${parsed.data.studentAnswer}".`,
-    `Correct answer: "${correctDisplay}".`,
+    "Task type: reading_mc.",
+    `Passage:\n${item.passage}`,
+    `Question: ${item.question}`,
+    `Options: ${payload.options
+      .map((opt, idx) => `${letter(idx)}) ${opt}`)
+      .join(" | ")}`,
+    payload.evidence ? `Evidence hint: ${payload.evidence}` : null,
+    `Student chose: ${studentDisplay}`,
+    `Correct answer: ${correctDisplay}`,
     `Auto-grader result: ${parsed.data.correct ? "CORRECT" : "INCORRECT"}.`,
   ]
     .filter(Boolean)
@@ -91,7 +89,7 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: openai(process.env.OPENAI_MODEL ?? "gpt-4o"),
-    system: GRAMMAR_EXPLAIN_PROMPT,
+    system: READING_EXPLAIN_PROMPT,
     prompt: context,
     temperature: 0.3,
   });
