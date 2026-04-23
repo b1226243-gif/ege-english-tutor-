@@ -10,7 +10,7 @@ AI tutor for the Russian State Exams in English — **ЕГЭ** (11th grade) and
 | ------------- | ------------------------------------ | ------------------------------------ | --------------- |
 | Writing       | Task 37 (email) + Task 38 (essay)    | Task 33 (email)                      | shipped (PR #2) |
 | Speaking      | Tasks 1–4 — Web Speech capture       | Tasks 1–3 — Web Speech capture       | shipped (PR #2) |
-| Grammar & Voc | Tasks 19–36                          | Tasks 18–32                          | planned (PR #3) |
+| Grammar & Voc | Tasks 19–36 (Open Cloze, Word Formation, Lexical MC) | Tasks 18–32 (Word Formation, Open Cloze) | shipped (PR #3) |
 | Reading       | Tasks 12–18                          | Tasks 12–17                          | planned (PR #4) |
 | Listening     | Tasks 1–11                           | Tasks 1–11                           | planned (PR #5) |
 | Mock Exam     | full timed run                       | full timed run                       | planned (PR #7) |
@@ -46,7 +46,7 @@ app/
       speaking/                   # Speaking workspace
       reading/page.tsx            # Stub (PR #4)
       listening/page.tsx          # Stub (PR #5)
-      grammar/page.tsx            # Stub (PR #3)
+      grammar/                    # Task-type picker + [taskCode] practice loop
       mock/page.tsx               # Stub (PR #7)
     writing/page.tsx              # Legacy redirect → /dashboard/ege_en/writing
     speaking/page.tsx             # Legacy redirect → /dashboard/ege_en/speaking
@@ -67,6 +67,7 @@ lib/
     index.ts                      # Lazy postgres client
 scripts/
   seed-exams.ts                   # Seeds `exam` + `section` rows (pnpm db:seed)
+  seed-grammar.ts                 # Seeds `task_template` + `item` rows for grammar (pnpm db:seed:grammar)
 auth.config.ts                    # Edge-safe Auth.js config (used in proxy.ts)
 auth.ts                           # Full Auth.js instance (Drizzle + bcrypt)
 proxy.ts                          # Next 16 route proxy — gates /dashboard/*
@@ -148,15 +149,16 @@ Alternative for rapid local iteration (no migration files, direct push):
 pnpm db:push
 ```
 
-### 4b. Seed exam catalogue
+### 4b. Seed exam catalogue + starter content
 
 ```bash
-pnpm db:seed
+pnpm db:seed           # exams + sections
+pnpm db:seed:grammar   # grammar task_templates + starter item bank (~25 items)
 ```
 
-Populates the `exam` and `section` tables with ЕГЭ + ОГЭ metadata (time
-limits, max scores, task counts). Idempotent — safe to re-run whenever
-`scripts/seed-exams.ts` changes.
+Both scripts are idempotent. The grammar bank is a small hand-curated set
+for now (Word Formation / Open Cloze / Lexical MC); a FIPI demo parser
+and AI generator expand it in later PRs.
 
 Inspect the database visually:
 
