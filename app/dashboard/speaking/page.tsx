@@ -1,0 +1,206 @@
+"use client";
+
+import * as React from "react";
+import { Mic, Square } from "lucide-react";
+
+import { ChatBox } from "@/components/chat-box";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+
+/**
+ * Speaking module — Web Speech API based.
+ *
+ * We use the browser's built-in `SpeechRecognition` (webkitSpeechRecognition)
+ * to transcribe the student's speech on the client. No server-side Whisper
+ * call is required for MVP. The resulting transcript is sent as a regular
+ * chat message with `module: "speaking"`, which invokes the speaking brain.
+ *
+ * If the browser does not support the Web Speech API we gracefully fall
+ * back to a plain textarea so the student can still practise.
+ */
+export default function SpeakingPage() {
+  const [transcript, setTranscript] = React.useState("");
+  const [recording, setRecording] = React.useState(false);
+  const [submittedAt, setSubmittedAt] = React.useState(0);
+  const recognitionRef = React.useRef<SpeechRecognitionLike | null>(null);
+
+  // `useSyncExternalStore` keeps SSR happy (returns `true` on the server) and
+  // flips to the real value on first client render — without calling setState
+  // inside an effect.
+  const supported = React.useSyncExternalStore(
+    () => () => {},
+    () => {
+      const w = window as WindowWithSpeech;
+      return !!(w.SpeechRecognition ?? w.webkitSpeechRecognition);
+    },
+    () => true,
+  );
+
+  React.useEffect(() => {
+    const w = window as WindowWithSpeech;
+    const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+    if (!Ctor) return;
+    const rec = new Ctor();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "en-US";
+    rec.onresult = (event) => {
+      let finalText = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        finalText += event.results[i][0].transcript;
+      }
+      setTranscript((prev) => (prev ? prev + " " : "") + finalText.trim());
+    };
+    rec.onend = () => setRecording(false);
+    recognitionRef.current = rec;
+    return () => {
+      rec.onresult = null;
+      rec.onend = null;
+      try {
+        rec.stop();
+      } catch {
+        // Ignore — already stopped.
+      }
+    };
+  }, []);
+
+  const start = () => {
+    setTranscript("");
+    recognitionRef.current?.start();
+    setRecording(true);
+  };
+  const stop = () => {
+    recognitionRef.current?.stop();
+    setRecording(false);
+  };
+
+  const chatKey = `speaking-${submittedAt}`;
+  const initialMessages = React.useMemo(() => {
+    if (submittedAt === 0) return undefined;
+    return [
+      {
+        id: `speech-${submittedAt}`,
+        role: "user" as const,
+        parts: [
+          {
+            type: "text" as const,
+            text: `Please evaluate my spoken response (transcribed by the browser).\n\nTranscript:\n"""\n${transcript}\n"""`,
+          },
+        ],
+      },
+    ];
+  }, [submittedAt, transcript]);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <h1 className="text-2xl font-semibold tracking-tight">Speaking</h1>
+
+      <div className="grid gap-4 lg:grid-cols-2 min-h-[70vh]">
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle>Voice capture</CardTitle>
+            <CardDescription>
+              Browser Web Speech API (Chrome / Edge). Falls back to typing if
+              unsupported.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1 flex flex-col gap-3">
+            {supported ? (
+              <div className="flex items-center gap-2">
+                {recording ? (
+                  <Button variant="destructive" onClick={stop}>
+                    <Square className="mr-2 h-4 w-4" /> Stop recording
+                  </Button>
+                ) : (
+                  <Button onClick={start}>
+                    <Mic className="mr-2 h-4 w-4" /> Start recording
+                  </Button>
+                )}
+                <span
+                  className={cn(
+                    "text-xs",
+                    recording ? "text-red-600" : "text-zinc-500",
+                  )}
+                >
+                  {recording ? "● Recording…" : "Idle"}
+                </span>
+              </div>
+            ) : (
+              <p className="text-sm text-amber-600">
+                This browser does not support the Web Speech API. Type your
+                response below instead.
+              </p>
+            )}
+            <Textarea
+              value={transcript}
+              onChange={(e) => setTranscript(e.target.value)}
+              placeholder="Transcript will appear here…"
+              className="flex-1 min-h-[260px] font-mono text-sm"
+            />
+            <div className="flex justify-end">
+              <Button
+                onClick={() => setSubmittedAt(Date.now())}
+                disabled={!transcript.trim() || recording}
+              >
+                Evaluate
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle>Examiner feedback</CardTitle>
+            <CardDescription>
+              Per-task FIPI scoring (Tasks 1–4).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1 flex flex-col">
+            <ChatBox
+              key={chatKey}
+              module="speaking"
+              initialMessages={initialMessages as never}
+              variant="feedback"
+              placeholder="Ask the examiner a follow-up…"
+              className="h-full"
+            />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────── Web Speech API types ────────────────────────────
+// Minimal structural typing — the full DOM typings for SpeechRecognition are
+// not yet in lib.dom.d.ts as of TypeScript 5.9.
+
+type SpeechRecognitionLike = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onend: (() => void) | null;
+};
+
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: ArrayLike<ArrayLike<{ transcript: string }>>;
+};
+
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+
+type WindowWithSpeech = Window & {
+  SpeechRecognition?: SpeechRecognitionCtor;
+  webkitSpeechRecognition?: SpeechRecognitionCtor;
+};
