@@ -15,9 +15,10 @@ export default async function DashboardLayout({
 
   return (
     <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
-      <nav className="mb-6 flex flex-wrap gap-2 text-sm">
-        <DashLink href="/dashboard/writing">Writing</DashLink>
-        <DashLink href="/dashboard/speaking">Speaking</DashLink>
+      <nav className="mb-6 flex flex-wrap items-center gap-2 text-sm">
+        <DashLink href="/dashboard">Все экзамены</DashLink>
+        <DashLink href="/dashboard/ege_en">ЕГЭ</DashLink>
+        <DashLink href="/dashboard/oge_en">ОГЭ</DashLink>
       </nav>
       {children}
     </div>

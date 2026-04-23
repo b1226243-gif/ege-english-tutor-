@@ -8,17 +8,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/auth";
-import { getSystemPrompt, type TutorModule } from "@/lib/prompts";
+import { getSystemPrompt, TUTOR_MODULES, type TutorModule } from "@/lib/prompts";
 
 // Stream responses for up to 60s (Next.js 16 / Vercel AI SDK default cap).
 export const maxDuration = 60;
 
 const BodySchema = z.object({
   messages: z.array(z.unknown()),
-  module: z
-    .enum(["base", "writing-37", "writing-38", "speaking"])
-    .optional()
-    .default("base"),
+  module: z.enum(TUTOR_MODULES).optional().default("base"),
 });
 
 /**

@@ -1,12 +1,22 @@
 # EGE English Tutor
 
-AI tutor for the Russian Unified State Exam (EGE) in English. Strict
-**FIPI 2024/25** scoring, Socratic feedback, dedicated modules for:
+AI tutor for the Russian State Exams in English — **ЕГЭ** (11th grade) and
+**ОГЭ** (9th grade), with IELTS / TOEFL / Cambridge planned. Strict
+**FIPI 2024/25** scoring, Socratic feedback.
 
-- **Writing / Task 37** — personal email (100–140 words, criteria К1–К3).
-- **Writing / Task 38** — opinion essay on a chart/table (180–275 words, К1–К5).
-- **Speaking simulator** — Tasks 1–4 of the oral part, with browser-based
-  voice capture (Web Speech API).
+**Sections (current status):**
+
+| Section       | ЕГЭ                                  | ОГЭ                                  | Status          |
+| ------------- | ------------------------------------ | ------------------------------------ | --------------- |
+| Writing       | Task 37 (email) + Task 38 (essay)    | Task 33 (email)                      | shipped (PR #2) |
+| Speaking      | Tasks 1–4 — Web Speech capture       | Tasks 1–3 — Web Speech capture       | shipped (PR #2) |
+| Grammar & Voc | Tasks 19–36                          | Tasks 18–32                          | planned (PR #3) |
+| Reading       | Tasks 12–18                          | Tasks 12–17                          | planned (PR #4) |
+| Listening     | Tasks 1–11                           | Tasks 1–11                           | planned (PR #5) |
+| Mock Exam     | full timed run                       | full timed run                       | planned (PR #7) |
+
+Routing: `/dashboard` → exam picker → `/dashboard/[examCode]` → section
+picker → `/dashboard/[examCode]/[section]`.
 
 ## Architecture
 
@@ -28,25 +38,35 @@ app/
     auth/[...nextauth]/route.ts   # Auth.js HTTP handlers
     chat/route.ts                 # Streaming chat endpoint (AI SDK)
   dashboard/
-    layout.tsx                    # Auth-gated dashboard shell
-    page.tsx                      # Dashboard index
-    writing/page.tsx              # Tasks 37 & 38 — split-screen
-    speaking/page.tsx             # Speaking simulator
-  sign-in/
-    page.tsx                      # Suspense wrapper
-    sign-in-form.tsx              # Credentials + GitHub buttons
+    layout.tsx                    # Auth-gated dashboard shell + top nav
+    page.tsx                      # Exam picker (ЕГЭ / ОГЭ)
+    [examCode]/
+      page.tsx                    # Section picker per exam
+      writing/                    # Writing workspace (Task 37/38 or 33)
+      speaking/                   # Speaking workspace
+      reading/page.tsx            # Stub (PR #4)
+      listening/page.tsx          # Stub (PR #5)
+      grammar/page.tsx            # Stub (PR #3)
+      mock/page.tsx               # Stub (PR #7)
+    writing/page.tsx              # Legacy redirect → /dashboard/ege_en/writing
+    speaking/page.tsx             # Legacy redirect → /dashboard/ege_en/speaking
+  sign-in/                        # Credentials + GitHub sign-in
   layout.tsx                      # Root layout + <SessionProvider>
   page.tsx                        # Landing
 components/
-  chat-box.tsx                    # Streaming chat UI (chat / feedback variants)
+  chat-box.tsx                    # Streaming chat UI + error banner
   score-card.tsx                  # FIPI scoring card
+  section-stub.tsx                # Shared "coming soon" placeholder
   ui/                             # Button, Card, Input, Textarea primitives
 lib/
   prompts.ts                      # "Brain" system prompts (FIPI 2024/25)
+  exams.ts                        # Per-exam metadata, section list, writing tasks
   utils.ts                        # cn() helper
   db/
-    schema.ts                     # Drizzle schema (Auth.js + domain tables)
+    schema.ts                     # Drizzle schema (Auth.js + Phase 1 + multi-exam)
     index.ts                      # Lazy postgres client
+scripts/
+  seed-exams.ts                   # Seeds `exam` + `section` rows (pnpm db:seed)
 auth.config.ts                    # Edge-safe Auth.js config (used in proxy.ts)
 auth.ts                           # Full Auth.js instance (Drizzle + bcrypt)
 proxy.ts                          # Next 16 route proxy — gates /dashboard/*
@@ -128,6 +148,16 @@ Alternative for rapid local iteration (no migration files, direct push):
 pnpm db:push
 ```
 
+### 4b. Seed exam catalogue
+
+```bash
+pnpm db:seed
+```
+
+Populates the `exam` and `section` tables with ЕГЭ + ОГЭ metadata (time
+limits, max scores, task counts). Idempotent — safe to re-run whenever
+`scripts/seed-exams.ts` changes.
+
 Inspect the database visually:
 
 ```bash
@@ -143,9 +173,13 @@ pnpm dev
 Open http://localhost:3000 and:
 
 - Sign in at `/sign-in` (credentials — see *Creating a test user* below).
-- Go to `/dashboard/writing` — pick Task 37 or 38, write, click **Evaluate**.
-- Go to `/dashboard/speaking` — click **Start recording** (Chrome/Edge) or
-  type a transcript directly, then **Evaluate**.
+- Land on `/dashboard` → pick ЕГЭ or ОГЭ.
+- Pick a section. Writing & Speaking are fully wired; Reading / Listening /
+  Grammar / Mock show the roadmap stub (planned for PR #3–#7).
+- In Writing: toggle between tasks (Task 37/38 for ЕГЭ, Task 33 for ОГЭ),
+  type a draft, click **Оценить**.
+- In Speaking: **Start recording** (Chrome/Edge) or paste a transcript, then
+  **Оценить**.
 
 ### 6. Linting, typechecking, production build
 
@@ -183,6 +217,25 @@ When deploying, run migrations once before the first traffic hits the server:
 DATABASE_URL=… pnpm db:migrate
 ```
 
+## Phase 2 multi-exam schema
+
+Phase 2 (PR #2) added the following tables alongside the Phase 1
+`chat` / `message` / `evaluation` tables (all preserved for backwards
+compatibility):
+
+| Table           | Purpose                                                    |
+| --------------- | ---------------------------------------------------------- |
+| `exam`          | One row per exam (ЕГЭ / ОГЭ today; IELTS/TOEFL reserved).  |
+| `section`       | One row per (exam × section_kind) with time + score limits.|
+| `task_template` | FIPI task definition (number, title, rubric JSON, config). |
+| `item`          | Concrete stimulus (text + audio URL + correct answers).    |
+| `attempt`       | A student sitting — practice / mock_section / mock_full.   |
+| `answer`        | A single student response within an attempt.               |
+| `rubric_score`  | Per-criterion scores (К1 / К2 / …) attached to an answer.  |
+
+Audio for Listening items is planned to live in **Vercel Blob** (lands in
+PR #5 along with the Listening UI).
+
 ## Roadmap notes
 
 - [ ] `/sign-up` route with Server Action that bcrypts the password.
@@ -190,3 +243,5 @@ DATABASE_URL=… pnpm db:migrate
 - [ ] Store parsed FIPI scores into `evaluation` for a progress dashboard.
 - [ ] Server-side Whisper fallback for browsers without the Web Speech API.
 - [ ] Task 37/38 stimulus bank (emails, charts) rendered on the left pane.
+- [ ] FIPI demo parser → seed `task_template` + `item` from official PDFs.
+- [ ] AI generators per section for infinite practice.

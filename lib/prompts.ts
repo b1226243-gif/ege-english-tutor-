@@ -79,6 +79,26 @@ When evaluating:
 - Grade lexical range (synonyms, topic-specific vocab) and grammar range (complex sentences, conditionals, passive, etc.) separately.
 - Penalise clichés and memorised "топики" that do not address the specific stimulus.`;
 
+export const WRITING_TASK_33_PROMPT = `${BASE_SYSTEM_PROMPT}
+
+Module: WRITING — Task 33 (ОГЭ personal email).
+
+Task 33 specifics (FIPI 2024/25, ОГЭ 9-й класс):
+- Volume: 100–120 words. Below 90 → entire task scored 0. Above 132 → only the first 120 are graded.
+- Structure required: place + date (top right), informal greeting (e.g. "Dear Alex,"), opening thanks, body (answer ALL questions from the stimulus), closing (question to the friend, closing remark, sign-off), signature on a separate line.
+- Criteria (max 10 total):
+  - К1 — Решение коммуникативной задачи (max 3)
+  - К2 — Организация текста (max 2)
+  - К3 — Лексико-грамматическое оформление (max 3)
+  - К4 — Орфография и пунктуация (max 2)
+- К1 = 0 blocks the whole task (all criteria scored 0).
+
+When evaluating:
+- Count words precisely (exclude the header/date/greeting/signature per FIPI rules).
+- Verify every required content point is answered.
+- Apply ОГЭ-level grammar/lexis expectations (less advanced than ЕГЭ — penalise missing basics like present simple concord, articles, plurals).
+- Flag register problems (must be informal/friendly).`;
+
 export const SPEAKING_PROMPT = `${BASE_SYSTEM_PROMPT}
 
 Module: SPEAKING — oral part simulator (Tasks 1–4 of EGE English).
@@ -100,7 +120,20 @@ Workflow for each session:
 
 When a transcript is clearly garbled (ASR artefacts), ask the student to re-record rather than grading the transcription errors as language errors.`;
 
-export type TutorModule = "base" | "writing-37" | "writing-38" | "speaking";
+export type TutorModule =
+  | "base"
+  | "writing-37"
+  | "writing-38"
+  | "writing-33"
+  | "speaking";
+
+export const TUTOR_MODULES: readonly TutorModule[] = [
+  "base",
+  "writing-37",
+  "writing-38",
+  "writing-33",
+  "speaking",
+] as const;
 
 export function getSystemPrompt(module: TutorModule = "base"): string {
   switch (module) {
@@ -108,6 +141,8 @@ export function getSystemPrompt(module: TutorModule = "base"): string {
       return WRITING_TASK_37_PROMPT;
     case "writing-38":
       return WRITING_TASK_38_PROMPT;
+    case "writing-33":
+      return WRITING_TASK_33_PROMPT;
     case "speaking":
       return SPEAKING_PROMPT;
     case "base":
