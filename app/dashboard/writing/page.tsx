@@ -46,22 +46,11 @@ export default function WritingPage() {
     ? { min: 100, max: 140, hardMin: 90 }
     : { min: 180, max: 275, hardMin: 160 };
 
-  const initialMessages = React.useMemo(() => {
+  const autoSubmit = React.useMemo(() => {
     if (submittedAt === 0) return undefined;
-    return [
-      {
-        id: `draft-${submittedAt}`,
-        role: "user" as const,
-        parts: [
-          {
-            type: "text" as const,
-            text: `Please evaluate the following ${
-              task === "writing-37" ? "Task 37 (personal email)" : "Task 38 (opinion essay)"
-            } strictly according to FIPI 2024/25 criteria.\n\n---\n${essay}\n---\n\nWord count (student-side estimate): ${wordCount}.`,
-          },
-        ],
-      },
-    ];
+    return `Please evaluate the following ${
+      task === "writing-37" ? "Task 37 (personal email)" : "Task 38 (opinion essay)"
+    } strictly according to FIPI 2024/25 criteria.\n\n---\n${essay}\n---\n\nWord count (student-side estimate): ${wordCount}.`;
   }, [submittedAt, task, essay, wordCount]);
 
   return (
@@ -130,7 +119,7 @@ export default function WritingPage() {
             <ChatBox
               key={chatKey}
               module={task as TutorModule}
-              initialMessages={initialMessages as never}
+              autoSubmit={autoSubmit}
               variant="feedback"
               placeholder="Ask a follow-up about the feedback…"
               className="h-full"

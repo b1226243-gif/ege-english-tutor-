@@ -83,20 +83,9 @@ export default function SpeakingPage() {
   };
 
   const chatKey = `speaking-${submittedAt}`;
-  const initialMessages = React.useMemo(() => {
+  const autoSubmit = React.useMemo(() => {
     if (submittedAt === 0) return undefined;
-    return [
-      {
-        id: `speech-${submittedAt}`,
-        role: "user" as const,
-        parts: [
-          {
-            type: "text" as const,
-            text: `Please evaluate my spoken response (transcribed by the browser).\n\nTranscript:\n"""\n${transcript}\n"""`,
-          },
-        ],
-      },
-    ];
+    return `Please evaluate my spoken response (transcribed by the browser).\n\nTranscript:\n"""\n${transcript}\n"""`;
   }, [submittedAt, transcript]);
 
   return (
@@ -167,7 +156,7 @@ export default function SpeakingPage() {
             <ChatBox
               key={chatKey}
               module="speaking"
-              initialMessages={initialMessages as never}
+              autoSubmit={autoSubmit}
               variant="feedback"
               placeholder="Ask the examiner a follow-up…"
               className="h-full"

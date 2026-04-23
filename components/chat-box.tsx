@@ -17,6 +17,14 @@ type ChatBoxProps = {
   placeholder?: string;
   /** Optional pre-seeded messages (e.g. a task stimulus from the server). */
   initialMessages?: UIMessage[];
+  /**
+   * When set, the ChatBox fires a one-off `sendMessage` with this text on
+   * mount (and on subsequent prop changes). Combined with a `key` on the
+   * parent that bumps per submission, this lets parents like Writing /
+   * Speaking trigger an evaluation without the student having to type in
+   * the follow-up box.
+   */
+  autoSubmit?: string;
   /** Additional classes on the outer wrapper. */
   className?: string;
   /** When true, render the assistant messages as a single feedback pane
@@ -28,6 +36,7 @@ export function ChatBox({
   module = "base",
   placeholder = "Ask your tutor anything…",
   initialMessages,
+  autoSubmit,
   className,
   variant = "chat",
 }: ChatBoxProps) {
@@ -41,6 +50,16 @@ export function ChatBox({
   });
 
   const isBusy = status === "submitted" || status === "streaming";
+
+  // Fire the initial evaluation request when the parent seeds `autoSubmit`.
+  // Guarded by a ref so StrictMode double-invokes don't POST twice.
+  const didAutoSubmit = React.useRef(false);
+  React.useEffect(() => {
+    const trimmed = autoSubmit?.trim();
+    if (!trimmed || didAutoSubmit.current) return;
+    didAutoSubmit.current = true;
+    sendMessage({ text: trimmed });
+  }, [autoSubmit, sendMessage]);
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
