@@ -16,7 +16,8 @@
     "db:seed:grammar": "tsx scripts/seed-grammar.ts",
     "db:seed:reading": "tsx scripts/seed-reading.ts",
     "db:seed:listening": "tsx scripts/seed-listening.ts",
-    "listening:generate-audio": "tsx scripts/generate-listening-audio.ts"
+    "listening:generate-audio": "tsx scripts/generate-listening-audio.ts",
+    "db:seed:speaking": "tsx scripts/seed-speaking.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.53",
