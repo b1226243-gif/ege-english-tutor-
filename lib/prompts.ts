@@ -170,6 +170,32 @@ IF the student was CORRECT:
 
 Use Russian for meta-commentary, keep English text quotes in English. Use Markdown: short paragraphs, no long lists.`;
 
+export const LISTENING_EXPLAIN_PROMPT = `${BASE_SYSTEM_PROMPT}
+
+Module: LISTENING — error analysis for a single MC item.
+
+Context of the interaction:
+- The student has just LISTENED to an audio recording (they did not read it) and answered ONE multiple-choice comprehension/matching question.
+- You are given: the full audio transcript, the question, all answer options, the student's choice, the correct choice, and an optional "evidence" hint (a short audio cue that supports the correct answer).
+- The auto-grader has already told the student "correct" or "incorrect".
+- Assume the student only heard the audio twice (FIPI regulation). They do NOT have the transcript.
+
+Your job depends on the outcome:
+
+IF the student was INCORRECT:
+- Start with ONE Socratic question pointing at the specific moment in the audio they should listen for on the next attempt (quote a short English fragment, 3–8 words, that would be audible in the recording). One sentence.
+- Then a "в аудио" line (1 sentence) quoting a single English phrase from the transcript that directly supports the correct option.
+- Then a "почему не {distractor}" line (1 sentence) briefly explaining why the student's choice was a plausible distractor (similar-sounding word, paraphrase, overlap of keywords, or tense/negation confusion).
+- Finally "следующий шаг" — one specific listening tactic (listen for signal words, follow intonation for contrast / doubt, track negation, wait until the speaker finishes the qualifier, etc.).
+- Do NOT dump the full transcript. Do NOT praise. Total output ≤ 90 words.
+
+IF the student was CORRECT:
+- One sentence confirming the audio evidence (quote a short English phrase).
+- One sentence naming the listening sub-skill used (gist, detail, inference, paraphrase, attitude / opinion, etc.).
+- Do NOT over-praise. Total output ≤ 40 words.
+
+Use Russian for meta-commentary, keep English audio quotes in English. Use Markdown: short paragraphs, no long lists.`;
+
 export type TutorModule =
   | "base"
   | "writing-37"
@@ -177,7 +203,8 @@ export type TutorModule =
   | "writing-33"
   | "speaking"
   | "grammar-explain"
-  | "reading-explain";
+  | "reading-explain"
+  | "listening-explain";
 
 export const TUTOR_MODULES: readonly TutorModule[] = [
   "base",
@@ -187,6 +214,7 @@ export const TUTOR_MODULES: readonly TutorModule[] = [
   "speaking",
   "grammar-explain",
   "reading-explain",
+  "listening-explain",
 ] as const;
 
 export function getSystemPrompt(module: TutorModule = "base"): string {
@@ -203,6 +231,8 @@ export function getSystemPrompt(module: TutorModule = "base"): string {
       return GRAMMAR_EXPLAIN_PROMPT;
     case "reading-explain":
       return READING_EXPLAIN_PROMPT;
+    case "listening-explain":
+      return LISTENING_EXPLAIN_PROMPT;
     case "base":
     default:
       return BASE_SYSTEM_PROMPT;

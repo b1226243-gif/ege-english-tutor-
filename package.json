@@ -14,7 +14,9 @@
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx scripts/seed-exams.ts",
     "db:seed:grammar": "tsx scripts/seed-grammar.ts",
-    "db:seed:reading": "tsx scripts/seed-reading.ts"
+    "db:seed:reading": "tsx scripts/seed-reading.ts",
+    "db:seed:listening": "tsx scripts/seed-listening.ts",
+    "listening:generate-audio": "tsx scripts/generate-listening-audio.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.53",
