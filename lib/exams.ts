@@ -66,8 +66,7 @@ export function getSections(
           ? "Задания 12–18 ЕГЭ. Matching + multiple choice."
           : "Задания 12–17 ОГЭ. Matching + multiple choice.",
       href: `${base}/reading`,
-      status: "planned",
-      plannedIn: "PR #4",
+      status: "available",
     },
     {
       kind: "listening",
@@ -77,8 +76,7 @@ export function getSections(
           ? "Задания 1–11 ЕГЭ. Два прослушивания."
           : "Задания 1–11 ОГЭ. Два прослушивания.",
       href: `${base}/listening`,
-      status: "planned",
-      plannedIn: "PR #5",
+      status: "available",
     },
     {
       kind: "grammar",
@@ -88,8 +86,7 @@ export function getSections(
           ? "Задания 19–36 ЕГЭ. Gap fill, word formation, cloze."
           : "Задания 18–32 ОГЭ. Word formation + gap fill.",
       href: `${base}/grammar`,
-      status: "planned",
-      plannedIn: "PR #3",
+      status: "available",
     },
     {
       kind: "writing",
