@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { SectionKind } from "@/lib/db/schema";
+import type { SpeakingFormat } from "@/lib/speaking/types";
 import type { WritingFormat } from "@/lib/writing/descriptors";
 
 /**
@@ -33,8 +34,9 @@ export const MockSectionKindSchema = z.enum([
   "reading",
   "grammar",
   "writing",
+  "speaking",
 ]);
-/** Sections wired into the mock loop. PR #8 adds "writing". */
+/** Sections wired into the mock loop. PR #8 added "writing"; PR #9 adds "speaking". */
 export type MockSectionKind = z.infer<typeof MockSectionKindSchema>;
 
 export type MockSectionPlanItem = {
@@ -103,6 +105,61 @@ export type MockStimulus =
       minWords: number;
       maxWords: number;
       hardMin: number;
+    }
+  /**
+   * Speaking — one stimulus per FIPI Task. Format drives both the runner UX
+   * (read aloud vs. picture compare vs. interview vs. monologue) and the
+   * scoring prompt picked by `/api/mock/speaking/score`.
+   */
+  | {
+      kind: "speaking_read_aloud";
+      format: Extract<SpeakingFormat, "read_aloud">;
+      fipiTaskRange: string;
+      prepareSeconds: number;
+      speakSeconds: number;
+      maxScore: number;
+      passage: string;
+    }
+  | {
+      kind: "speaking_ask_questions";
+      format: Extract<SpeakingFormat, "ask_questions">;
+      fipiTaskRange: string;
+      prepareSeconds: number;
+      speakSeconds: number;
+      maxScore: number;
+      advert: string;
+      aspects: string[];
+    }
+  | {
+      kind: "speaking_interview";
+      format: Extract<SpeakingFormat, "interview">;
+      fipiTaskRange: string;
+      prepareSeconds: number;
+      speakSeconds: number;
+      maxScore: number;
+      context: string;
+      questions: string[];
+    }
+  | {
+      kind: "speaking_picture_compare";
+      format: Extract<SpeakingFormat, "picture_compare">;
+      fipiTaskRange: string;
+      prepareSeconds: number;
+      speakSeconds: number;
+      maxScore: number;
+      topic: string;
+      imageCaptions: [string, string];
+      plan: string[];
+    }
+  | {
+      kind: "speaking_monologue";
+      format: Extract<SpeakingFormat, "monologue_topic">;
+      fipiTaskRange: string;
+      prepareSeconds: number;
+      speakSeconds: number;
+      maxScore: number;
+      topic: string;
+      plan: string[];
     };
 
 export type MockSectionPlan = {
@@ -159,6 +216,13 @@ export const MockAnswerRequestSchema = z.discriminatedUnion("kind", [
      */
     text: z.string().min(0).max(8000),
   }),
+  /**
+   * Speaking is *not* sent as a JSON answer — the runner posts the audio
+   * blob directly to `POST /api/mock/speaking/transcribe` (multipart/form-data)
+   * which transcribes via Whisper and persists the answer with score=null.
+   * We keep no schema entry for it because there's no JSON shape to
+   * validate; the speaking endpoint owns its own request body.
+   */
 ]);
 export type MockAnswerRequest = z.infer<typeof MockAnswerRequestSchema>;
 
@@ -193,6 +257,24 @@ export type MockSectionResult = {
       minWords: number;
       maxWords: number;
       hardMin: number;
+      score: {
+        total: number;
+        max: number;
+        scores: { code: string; label: string; score: number; max: number; notes: string }[];
+        summary: string;
+        errors: { quote: string; question: string }[];
+      } | null;
+    };
+    /**
+     * Present only for speaking items. Contains the Whisper transcript
+     * captured during the mock plus, when the student has clicked
+     * "Оценить AI", the structured FIPI rubric breakdown.
+     */
+    speaking?: {
+      format: SpeakingFormat;
+      taskRange: string;
+      audioDurationSeconds: number;
+      transcript: string;
       score: {
         total: number;
         max: number;

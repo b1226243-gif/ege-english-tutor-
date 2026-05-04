@@ -39,7 +39,12 @@ const MAX_LISTENING_PLAYS = 2;
 type LocalAnswer =
   | { kind: "mc"; choice: number }
   | { kind: "text"; value: string }
-  | { kind: "writing"; value: string };
+  | { kind: "writing"; value: string }
+  | {
+      kind: "speaking";
+      transcript: string;
+      audioDurationSeconds: number;
+    };
 
 type LocalAnswers = Record<string, LocalAnswer>;
 
@@ -92,6 +97,16 @@ export function MockRunner({ examCode, attemptId, startedAtIso }: Props) {
   // race against the submit, and saveMockAnswer would reject them with
   // "already submitted".
   const pendingSavesRef = React.useRef<Set<Promise<unknown>>>(new Set());
+
+  // Surface for non-`/api/mock/answer` saves (currently: speaking
+  // uploads to `/api/mock/speaking/transcribe`) to register themselves
+  // with the same flush set, so the timer-driven AutoSubmit waits for
+  // an in-flight Whisper upload before it POSTs `/api/mock/submit`.
+  const registerPending = React.useCallback(<T,>(p: Promise<T>) => {
+    pendingSavesRef.current.add(p);
+    void p.finally(() => pendingSavesRef.current.delete(p));
+    return p;
+  }, []);
 
   const flushPendingSaves = React.useCallback(async () => {
     // Force any focused textarea to commit its current value (blur fires
@@ -240,11 +255,13 @@ export function MockRunner({ examCode, attemptId, startedAtIso }: Props) {
 
       {section && (
         <SectionRunner
+          attemptId={attemptId}
           section={section}
           answers={answers}
           savingItemId={savingItemId}
           listeningPlays={listeningPlays}
           onListeningPlay={incrementListeningPlays}
+          registerPending={registerPending}
           onAnswer={(item, next) => {
             setAnswers((prev) => {
               const copy = { ...prev, [item.id]: next };
@@ -483,18 +500,22 @@ function SectionTabs({
 }
 
 function SectionRunner({
+  attemptId,
   section,
   answers,
   savingItemId,
   listeningPlays,
   onListeningPlay,
+  registerPending,
   onAnswer,
 }: {
+  attemptId: string;
   section: MockSectionPlan;
   answers: LocalAnswers;
   savingItemId: string | null;
   listeningPlays: Record<string, number>;
   onListeningPlay: (itemId: string) => void;
+  registerPending: <T>(p: Promise<T>) => Promise<T>;
   onAnswer: (item: MockSectionPlanItem, next: LocalAnswer) => void;
 }) {
   return (
@@ -502,6 +523,7 @@ function SectionRunner({
       {section.items.map((it, idx) => (
         <ItemCard
           key={it.id}
+          attemptId={attemptId}
           index={idx}
           total={section.items.length}
           item={it}
@@ -509,6 +531,7 @@ function SectionRunner({
           saving={savingItemId === it.id}
           plays={listeningPlays[it.id] ?? 0}
           onListeningPlay={() => onListeningPlay(it.id)}
+          registerPending={registerPending}
           onAnswer={onAnswer}
         />
       ))}
@@ -517,6 +540,7 @@ function SectionRunner({
 }
 
 function ItemCard({
+  attemptId,
   index,
   total,
   item,
@@ -524,8 +548,10 @@ function ItemCard({
   saving,
   plays,
   onListeningPlay,
+  registerPending,
   onAnswer,
 }: {
+  attemptId: string;
   index: number;
   total: number;
   item: MockSectionPlanItem;
@@ -533,6 +559,7 @@ function ItemCard({
   saving: boolean;
   plays: number;
   onListeningPlay: () => void;
+  registerPending: <T>(p: Promise<T>) => Promise<T>;
   onAnswer: (item: MockSectionPlanItem, next: LocalAnswer) => void;
 }) {
   const stim = item.stimulus;
@@ -603,6 +630,20 @@ function ItemCard({
             stim={stim}
             value={answer?.kind === "writing" ? answer.value : ""}
             onCommit={(v) => onAnswer(item, { kind: "writing", value: v })}
+          />
+        )}
+        {(stim.kind === "speaking_read_aloud" ||
+          stim.kind === "speaking_ask_questions" ||
+          stim.kind === "speaking_interview" ||
+          stim.kind === "speaking_picture_compare" ||
+          stim.kind === "speaking_monologue") && (
+          <SpeakingStimulus
+            attemptId={attemptId}
+            itemId={item.id}
+            stim={stim}
+            answer={answer?.kind === "speaking" ? answer : null}
+            registerPending={registerPending}
+            onSaved={(next) => onAnswer(item, next)}
           />
         )}
       </CardContent>
@@ -731,6 +772,399 @@ function countWords(text: string): number {
   const trimmed = text.trim();
   if (!trimmed) return 0;
   return trimmed.split(/\s+/).length;
+}
+
+type SpeakingStim = Extract<
+  MockSectionPlanItem["stimulus"],
+  | { kind: "speaking_read_aloud" }
+  | { kind: "speaking_ask_questions" }
+  | { kind: "speaking_interview" }
+  | { kind: "speaking_picture_compare" }
+  | { kind: "speaking_monologue" }
+>;
+
+/**
+ * Speaking task UI for mock mode. Drives a 3-phase flow:
+ *   1. Show prompt with a "preparation" countdown — student reads silently.
+ *   2. Once prep timer runs out (or on click), MediaRecorder starts and
+ *      a "speak" countdown runs; when it hits zero we auto-stop.
+ *   3. The recorded blob is uploaded to `/api/mock/speaking/transcribe`,
+ *      Whisper transcribes it, and the transcript replaces the LocalAnswer.
+ *
+ * Audio bytes never leave the browser as a persistent artefact — we
+ * keep only the transcript + duration on the answer row, mirroring the
+ * standalone speaking module.
+ */
+function SpeakingStimulus({
+  attemptId,
+  itemId,
+  stim,
+  answer,
+  registerPending,
+  onSaved,
+}: {
+  attemptId: string;
+  itemId: string;
+  stim: SpeakingStim;
+  answer:
+    | { kind: "speaking"; transcript: string; audioDurationSeconds: number }
+    | null;
+  registerPending: <T>(p: Promise<T>) => Promise<T>;
+  onSaved: (next: {
+    kind: "speaking";
+    transcript: string;
+    audioDurationSeconds: number;
+  }) => void;
+}) {
+  type Phase = "idle" | "preparing" | "recording" | "uploading" | "saved" | "error";
+  const [phase, setPhase] = React.useState<Phase>(answer ? "saved" : "idle");
+  const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  const [prepRemaining, setPrepRemaining] = React.useState(stim.prepareSeconds);
+  const [speakRemaining, setSpeakRemaining] = React.useState(stim.speakSeconds);
+  const recorderRef = React.useRef<MediaRecorder | null>(null);
+  const streamRef = React.useRef<MediaStream | null>(null);
+  const chunksRef = React.useRef<Blob[]>([]);
+  const startedAtRef = React.useRef<number>(0);
+  const prepTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const speakTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const cleanup = React.useCallback(() => {
+    if (prepTimerRef.current) {
+      clearInterval(prepTimerRef.current);
+      prepTimerRef.current = null;
+    }
+    if (speakTimerRef.current) {
+      clearInterval(speakTimerRef.current);
+      speakTimerRef.current = null;
+    }
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      try {
+        recorderRef.current.stop();
+      } catch {
+        // ignore
+      }
+    }
+    recorderRef.current = null;
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+  }, []);
+
+  React.useEffect(() => {
+    return () => cleanup();
+  }, [cleanup]);
+
+  const stopRecording = React.useCallback(() => {
+    if (speakTimerRef.current) {
+      clearInterval(speakTimerRef.current);
+      speakTimerRef.current = null;
+    }
+    const rec = recorderRef.current;
+    if (rec && rec.state !== "inactive") {
+      try {
+        rec.stop();
+      } catch {
+        // ignore
+      }
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+  }, []);
+
+  const startRecording = React.useCallback(async () => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setPhase("error");
+      setErrorMsg("Браузер не поддерживает запись звука.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const rec = new MediaRecorder(stream);
+      recorderRef.current = rec;
+      chunksRef.current = [];
+      rec.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) chunksRef.current.push(ev.data);
+      };
+      rec.onstop = () => {
+        const blob = new Blob(chunksRef.current, {
+          type: rec.mimeType || "audio/webm",
+        });
+        const durationSeconds = Math.max(
+          0,
+          Math.round((Date.now() - startedAtRef.current) / 1000),
+        );
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((t) => t.stop());
+          streamRef.current = null;
+        }
+        if (blob.size === 0) {
+          setPhase("error");
+          setErrorMsg("Запись пуста. Попробуйте ещё раз.");
+          return;
+        }
+        setPhase("uploading");
+        const work = (async () => {
+          try {
+            const form = new FormData();
+            form.append("audio", blob, "recording.webm");
+            form.append("attemptId", attemptId);
+            form.append("itemId", itemId);
+            form.append("durationSeconds", String(durationSeconds));
+            const res = await fetch("/api/mock/speaking/transcribe", {
+              method: "POST",
+              body: form,
+            });
+            if (!res.ok) {
+              const payload = (await res.json().catch(() => null)) as
+                | { error?: string }
+                | null;
+              throw new Error(payload?.error ?? `${res.status}`);
+            }
+            const data = (await res.json()) as {
+              transcript: string;
+              audioDurationSeconds: number;
+            };
+            onSaved({
+              kind: "speaking",
+              transcript: data.transcript,
+              audioDurationSeconds: data.audioDurationSeconds,
+            });
+            setPhase("saved");
+          } catch (err) {
+            setPhase("error");
+            setErrorMsg(
+              err instanceof Error ? err.message : "Не удалось загрузить запись.",
+            );
+          }
+        })();
+        void registerPending(work);
+      };
+      startedAtRef.current = Date.now();
+      rec.start();
+      setPhase("recording");
+      setSpeakRemaining(stim.speakSeconds);
+      speakTimerRef.current = setInterval(() => {
+        setSpeakRemaining((prev) => {
+          if (prev <= 1) {
+            stopRecording();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (err) {
+      setPhase("error");
+      setErrorMsg(
+        err instanceof Error
+          ? `Микрофон недоступен: ${err.message}`
+          : "Микрофон недоступен.",
+      );
+    }
+  }, [
+    attemptId,
+    itemId,
+    onSaved,
+    registerPending,
+    stim.speakSeconds,
+    stopRecording,
+  ]);
+
+  const beginPreparation = React.useCallback(() => {
+    setErrorMsg(null);
+    setPhase("preparing");
+    setPrepRemaining(stim.prepareSeconds);
+    if (prepTimerRef.current) clearInterval(prepTimerRef.current);
+    prepTimerRef.current = setInterval(() => {
+      setPrepRemaining((prev) => {
+        if (prev <= 1) {
+          if (prepTimerRef.current) {
+            clearInterval(prepTimerRef.current);
+            prepTimerRef.current = null;
+          }
+          void startRecording();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, [stim.prepareSeconds, startRecording]);
+
+  const skipPreparation = React.useCallback(() => {
+    if (prepTimerRef.current) {
+      clearInterval(prepTimerRef.current);
+      prepTimerRef.current = null;
+    }
+    setPrepRemaining(0);
+    void startRecording();
+  }, [startRecording]);
+
+  const reset = React.useCallback(() => {
+    cleanup();
+    setPhase("idle");
+    setErrorMsg(null);
+    setPrepRemaining(stim.prepareSeconds);
+    setSpeakRemaining(stim.speakSeconds);
+  }, [cleanup, stim.prepareSeconds, stim.speakSeconds]);
+
+  return (
+    <div className="space-y-3">
+      <SpeakingPrompt stim={stim} />
+
+      {phase === "idle" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={beginPreparation}>Подготовиться</Button>
+          <span className="text-xs text-zinc-500">
+            Подготовка: {formatHMS(stim.prepareSeconds)} · речь:{" "}
+            {formatHMS(stim.speakSeconds)}
+          </span>
+        </div>
+      )}
+
+      {phase === "preparing" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
+            Подготовка: {formatHMS(prepRemaining)}
+          </span>
+          <Button variant="outline" onClick={skipPreparation}>
+            Начать запись сейчас
+          </Button>
+        </div>
+      )}
+
+      {phase === "recording" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-900 dark:bg-red-950/60 dark:text-red-200">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-red-600" />
+            Запись · {formatHMS(speakRemaining)}
+          </span>
+          <Button variant="outline" onClick={stopRecording}>
+            Остановить
+          </Button>
+        </div>
+      )}
+
+      {phase === "uploading" && (
+        <div className="text-xs text-zinc-500">
+          Расшифровываем запись…
+        </div>
+      )}
+
+      {phase === "saved" && answer && (
+        <div className="space-y-2 rounded-md border bg-emerald-50/50 p-3 text-xs dark:bg-emerald-950/30">
+          <div className="font-medium text-emerald-900 dark:text-emerald-200">
+            Сохранено · {formatHMS(answer.audioDurationSeconds)} речи
+          </div>
+          <pre className="whitespace-pre-wrap font-sans text-zinc-700 dark:text-zinc-300">
+            {answer.transcript}
+          </pre>
+          <Button variant="outline" onClick={reset}>
+            Перезаписать
+          </Button>
+        </div>
+      )}
+
+      {phase === "error" && (
+        <div className="space-y-2">
+          {errorMsg && (
+            <div className="text-xs text-red-700 dark:text-red-300">
+              {errorMsg}
+            </div>
+          )}
+          <Button variant="outline" onClick={reset}>
+            Попробовать снова
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SpeakingPrompt({ stim }: { stim: SpeakingStim }) {
+  const header = (
+    <div className="text-xs uppercase tracking-wide text-zinc-500">
+      Устная часть · №{stim.fipiTaskRange}
+    </div>
+  );
+  if (stim.kind === "speaking_read_aloud") {
+    return (
+      <div className="space-y-2 rounded-md border bg-zinc-50/50 p-3 text-sm leading-relaxed dark:bg-zinc-900/40">
+        {header}
+        <p className="text-xs text-zinc-600 dark:text-zinc-400">
+          Прочитайте текст вслух.
+        </p>
+        <pre className="whitespace-pre-wrap font-sans">{stim.passage}</pre>
+      </div>
+    );
+  }
+  if (stim.kind === "speaking_ask_questions") {
+    return (
+      <div className="space-y-2 rounded-md border bg-zinc-50/50 p-3 text-sm leading-relaxed dark:bg-zinc-900/40">
+        {header}
+        <p className="text-xs text-zinc-600 dark:text-zinc-400">
+          Изучите объявление и задайте по нему 4 прямых вопроса.
+        </p>
+        <pre className="whitespace-pre-wrap font-sans">{stim.advert}</pre>
+        <ol className="ml-5 list-decimal space-y-1 text-xs text-zinc-700 dark:text-zinc-300">
+          {stim.aspects.map((a, i) => (
+            <li key={i}>{a}</li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
+  if (stim.kind === "speaking_interview") {
+    return (
+      <div className="space-y-2 rounded-md border bg-zinc-50/50 p-3 text-sm leading-relaxed dark:bg-zinc-900/40">
+        {header}
+        <p className="text-xs text-zinc-600 dark:text-zinc-400">
+          Условный диалог: ответьте на вопросы интервьюера по очереди.
+        </p>
+        <p className="font-medium">{stim.context}</p>
+        <ol className="ml-5 list-decimal space-y-1 text-xs text-zinc-700 dark:text-zinc-300">
+          {stim.questions.map((q, i) => (
+            <li key={i}>{q}</li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
+  if (stim.kind === "speaking_picture_compare") {
+    return (
+      <div className="space-y-2 rounded-md border bg-zinc-50/50 p-3 text-sm leading-relaxed dark:bg-zinc-900/40">
+        {header}
+        <p className="text-xs text-zinc-600 dark:text-zinc-400">
+          Сравните две фотографии. Тема: <span className="font-medium">{stim.topic}</span>.
+        </p>
+        <ul className="ml-5 list-disc space-y-1 text-xs">
+          <li>Фото 1: {stim.imageCaptions[0]}</li>
+          <li>Фото 2: {stim.imageCaptions[1]}</li>
+        </ul>
+        <ol className="ml-5 list-decimal space-y-1 text-xs text-zinc-700 dark:text-zinc-300">
+          {stim.plan.map((p, i) => (
+            <li key={i}>{p}</li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2 rounded-md border bg-zinc-50/50 p-3 text-sm leading-relaxed dark:bg-zinc-900/40">
+      {header}
+      <p className="text-xs text-zinc-600 dark:text-zinc-400">
+        Монолог по теме. Раскройте все пункты плана.
+      </p>
+      <p className="font-medium">{stim.topic}</p>
+      <ol className="ml-5 list-decimal space-y-1 text-xs text-zinc-700 dark:text-zinc-300">
+        {stim.plan.map((p, i) => (
+          <li key={i}>{p}</li>
+        ))}
+      </ol>
+    </div>
+  );
 }
 
 function ListeningStimulus({
