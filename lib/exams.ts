@@ -119,8 +119,8 @@ export type ExtraPracticeMode = {
   displayName: string;
   description: string;
   href: string;
-  status: "planned";
-  plannedIn: string;
+  status: "available" | "planned";
+  plannedIn?: string;
 };
 
 export function getMockMode(
@@ -128,14 +128,13 @@ export function getMockMode(
 ): ExtraPracticeMode {
   return {
     kind: "mock",
-    displayName: "Mock Exam — полный вариант",
+    displayName: "Mock Exam — таймированный пробник",
     description:
       examCode === "ege_en"
-        ? "Полный таймированный вариант ЕГЭ (180 минут письменная часть + устная). Все секции в один заход."
-        : "Полный таймированный вариант ОГЭ (120 минут письменная часть + устная).",
+        ? "ЕГЭ · 100 минут на 3 объективные секции (Аудирование, Чтение, Грамматика). Итоговый протокол с разбором."
+        : "ОГЭ · 90 минут на 3 объективные секции. Секции Письмо и Устная — отдельными модулями.",
     href: `/dashboard/${examCode}/mock`,
-    status: "planned",
-    plannedIn: "PR #7",
+    status: "available",
   };
 }
 
