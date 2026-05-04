@@ -45,3 +45,9 @@ yarn-error.log*
 next-env.d.ts
 
 
+
+# Local test artifacts and verification scripts
+test-plan*.md
+test-report*.md
+scripts/verify-*.ts
+scripts/baseline.ts

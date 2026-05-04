@@ -38,7 +38,8 @@ const MAX_LISTENING_PLAYS = 2;
 
 type LocalAnswer =
   | { kind: "mc"; choice: number }
-  | { kind: "text"; value: string };
+  | { kind: "text"; value: string }
+  | { kind: "writing"; value: string };
 
 type LocalAnswers = Record<string, LocalAnswer>;
 
@@ -387,6 +388,17 @@ function buildRequest(
   ) {
     return { kind: "grammar_text", attemptId, itemId: item.id, value: ans.value };
   }
+  if (
+    (stim.kind === "writing_email" || stim.kind === "writing_essay") &&
+    ans.kind === "writing"
+  ) {
+    return {
+      kind: "writing_essay",
+      attemptId,
+      itemId: item.id,
+      text: ans.value,
+    };
+  }
   return null;
 }
 
@@ -586,12 +598,140 @@ function ItemCard({
             onChange={(v) => onAnswer(item, { kind: "text", value: v })}
           />
         )}
+        {(stim.kind === "writing_email" || stim.kind === "writing_essay") && (
+          <WritingStimulus
+            stim={stim}
+            value={answer?.kind === "writing" ? answer.value : ""}
+            onCommit={(v) => onAnswer(item, { kind: "writing", value: v })}
+          />
+        )}
       </CardContent>
     </Card>
   );
 }
 
 // ----- stimulus subcomponents -------------------------------------------
+
+function WritingStimulus({
+  stim,
+  value,
+  onCommit,
+}: {
+  stim: Extract<
+    MockSectionPlanItem["stimulus"],
+    { kind: "writing_email" } | { kind: "writing_essay" }
+  >;
+  value: string;
+  onCommit: (v: string) => void;
+}) {
+  // Word counter is recomputed from the most recent committed value.
+  // Edits flow through the same DebouncedTextarea path that grammar
+  // uses, so flushPendingSaves() also covers writing on auto-submit.
+  // The 300ms commit debounce means the counter lags by one debounce
+  // window — fine for a UX hint.
+  const wordCount = React.useMemo(() => countWords(value), [value]);
+  const meta = React.useMemo(() => {
+    const min = stim.minWords;
+    const max = stim.maxWords;
+    const hardMin = stim.hardMin;
+    if (wordCount === 0) return { tone: "neutral" as const, label: `Цель: ${min}–${max} слов` };
+    if (wordCount < hardMin) {
+      return {
+        tone: "danger" as const,
+        label: `${wordCount} слов · ниже ${hardMin} — К1 = 0`,
+      };
+    }
+    if (wordCount < min) {
+      return {
+        tone: "warn" as const,
+        label: `${wordCount} слов · нужно ${min}+`,
+      };
+    }
+    if (wordCount > max) {
+      return {
+        tone: "warn" as const,
+        label: `${wordCount} слов · уйдут после ${max}`,
+      };
+    }
+    return {
+      tone: "ok" as const,
+      label: `${wordCount} слов · в диапазоне ${min}–${max}`,
+    };
+  }, [wordCount, stim.minWords, stim.maxWords, stim.hardMin]);
+
+  return (
+    <div className="space-y-3">
+      {stim.kind === "writing_email" ? (
+        <div className="space-y-2 rounded-md border bg-zinc-50/50 p-3 text-sm leading-relaxed dark:bg-zinc-900/40">
+          <div className="text-xs uppercase tracking-wide text-zinc-500">
+            Письмо от {stim.friendName}
+          </div>
+          <pre className="whitespace-pre-wrap font-sans">
+            {stim.friendLetter}
+          </pre>
+          <ol className="ml-5 list-decimal space-y-1 text-xs text-zinc-700 dark:text-zinc-300">
+            {stim.questions.map((q, i) => (
+              <li key={i}>{q}</li>
+            ))}
+          </ol>
+        </div>
+      ) : (
+        <div className="space-y-2 rounded-md border bg-zinc-50/50 p-3 text-sm leading-relaxed dark:bg-zinc-900/40">
+          <div className="text-xs uppercase tracking-wide text-zinc-500">
+            Эссе · Task {stim.taskNumber}
+          </div>
+          <p className="font-medium">{stim.topic}</p>
+          <p>{stim.prompt}</p>
+          <div className="mt-1 rounded border bg-white p-2 text-xs dark:bg-zinc-950">
+            <div className="font-medium">{stim.table.caption}</div>
+            <ul className="mt-1 space-y-0.5">
+              {stim.table.rows.map((row, i) => (
+                <li key={i} className="flex justify-between gap-2">
+                  <span>{row.label}</span>
+                  <span className="font-mono">{row.value}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <ol className="ml-5 list-decimal space-y-1 text-xs text-zinc-700 dark:text-zinc-300">
+            {stim.planLabels.map((p, i) => (
+              <li key={i}>{p}</li>
+            ))}
+          </ol>
+        </div>
+      )}
+      <DebouncedTextarea
+        // Re-key on hydration only; subsequent edits keep the same input.
+        key={`writing-${value === "" ? "empty" : "draft"}`}
+        initial={value}
+        onCommit={onCommit}
+        placeholder={
+          stim.kind === "writing_email"
+            ? "Dear …,\n\n…\n\nBest wishes,\n…"
+            : "Some people believe that …"
+        }
+        className="min-h-[260px] font-sans text-sm leading-relaxed"
+      />
+      <div
+        className={cn(
+          "text-xs",
+          meta.tone === "danger" && "text-red-600",
+          meta.tone === "warn" && "text-amber-600",
+          meta.tone === "ok" && "text-emerald-600",
+          meta.tone === "neutral" && "text-zinc-500",
+        )}
+      >
+        {meta.label}
+      </div>
+    </div>
+  );
+}
+
+function countWords(text: string): number {
+  const trimmed = text.trim();
+  if (!trimmed) return 0;
+  return trimmed.split(/\s+/).length;
+}
 
 function ListeningStimulus({
   audioUrl,
@@ -795,9 +935,13 @@ const DEBOUNCED_COMMIT_MS = 300;
 function DebouncedTextarea({
   initial,
   onCommit,
+  placeholder = "Ваш ответ",
+  className = "min-h-[60px] font-mono text-sm",
 }: {
   initial: string;
   onCommit: (v: string) => void;
+  placeholder?: string;
+  className?: string;
 }) {
   const [local, setLocal] = React.useState(initial);
   // Keep latest values in refs so the unmount cleanup can read them
@@ -854,8 +998,8 @@ function DebouncedTextarea({
         }, DEBOUNCED_COMMIT_MS);
       }}
       onBlur={flush}
-      placeholder="Ваш ответ"
-      className="min-h-[60px] font-mono text-sm"
+      placeholder={placeholder}
+      className={className}
     />
   );
 }

@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
@@ -20,6 +20,11 @@ import {
   ReadingAnswerSchema,
   gradeReadingAnswer,
 } from "@/lib/reading/types";
+import {
+  WRITING_DESCRIPTORS,
+  totalWritingMax,
+  type WritingFormat,
+} from "@/lib/writing/descriptors";
 import type {
   MockAnswerRequest,
   MockPlan,
@@ -134,6 +139,14 @@ export async function saveMockAnswer(params: {
     .limit(1);
   if (!item) throw new Error("Item not found");
 
+  // Writing answers are not auto-graded — they persist as draft text and
+  // are AI-graded on demand from the results page (see
+  // `/api/mock/writing/score`). They live on the same `answers` row but
+  // skip the rubric_scores branch entirely.
+  if (request.kind === "writing_essay" && item.sectionKind === "writing") {
+    return savePendingWritingAnswer(request);
+  }
+
   const graded = gradeRequest(request, item.correctAnswers, item.sectionKind);
   if (!graded) throw new Error("Cannot grade this item type in mock mode");
 
@@ -178,6 +191,67 @@ export async function saveMockAnswer(params: {
   });
 
   return { answerId };
+}
+
+async function savePendingWritingAnswer(
+  request: Extract<MockAnswerRequest, { kind: "writing_essay" }>,
+): Promise<{ answerId: string }> {
+  const text = request.text.trim();
+  const wordCount = countWords(text);
+  // Lazy import keeps the writing module out of the listening/reading
+  // hot path. The descriptor format comes from the plan stored on the
+  // attempt — we look it up via the item's task_template.
+  const [tpl] = await db()
+    .select({ config: taskTemplates.config })
+    .from(items)
+    .innerJoin(taskTemplates, eq(items.taskTemplateId, taskTemplates.id))
+    .where(eq(items.id, request.itemId))
+    .limit(1);
+  const cfg = (tpl?.config ?? {}) as { format?: string };
+  const format = cfg.format ?? "task_37_email";
+
+  const rawAnswer = {
+    type: "writing" as const,
+    format,
+    text,
+    wordCount,
+    score: null,
+  };
+
+  const answerId = await db().transaction(async (tx) => {
+    const [upserted] = await tx
+      .insert(answers)
+      .values({
+        attemptId: request.attemptId,
+        itemId: request.itemId,
+        rawAnswer,
+        autoScore: null,
+      })
+      .onConflictDoUpdate({
+        target: [answers.attemptId, answers.itemId],
+        set: {
+          rawAnswer,
+          autoScore: null,
+        },
+      })
+      .returning({ id: answers.id });
+
+    // Drop any stale rubric_scores from a previous AI evaluation — when
+    // the student edits and resubmits, the old AI score no longer
+    // describes the new draft.
+    await tx
+      .delete(rubricScores)
+      .where(eq(rubricScores.answerId, upserted.id));
+
+    return upserted.id;
+  });
+  return { answerId };
+}
+
+function countWords(text: string): number {
+  const trimmed = text.trim();
+  if (!trimmed) return 0;
+  return trimmed.split(/\s+/).length;
 }
 
 type Graded = {
@@ -259,6 +333,80 @@ function gradeRequest(
  * Mark the attempt as submitted, compute aggregates, and return the full
  * results payload for the results page.
  */
+/**
+ * Persist an AI-generated writing score for a mock answer. Mirrors the
+ * speaking flow: total score is the sum of per-criterion scores; one
+ * `rubric_score` row per criterion. Idempotent — re-running replaces
+ * the previous evaluation atomically.
+ *
+ * Caller is responsible for clamping each criterion score to its
+ * declared max (we trust the input, but also enforce it again here).
+ */
+export async function persistMockWritingScore(params: {
+  userId: string;
+  attemptId: string;
+  itemId: string;
+  score: {
+    total: number;
+    max: number;
+    scores: { code: string; label: string; score: number; max: number; notes: string }[];
+    summary: string;
+    errors: { quote: string; question: string }[];
+  };
+}): Promise<{ answerId: string }> {
+  const { userId, attemptId, itemId, score } = params;
+  const attempt = await getMockAttempt(attemptId);
+  if (!attempt) throw new Error("Mock attempt not found");
+  if (attempt.userId !== userId) throw new Error("Forbidden");
+
+  const [row] = await db()
+    .select({
+      id: answers.id,
+      rawAnswer: answers.rawAnswer,
+    })
+    .from(answers)
+    .where(and(eq(answers.attemptId, attemptId), eq(answers.itemId, itemId)))
+    .limit(1);
+  if (!row) throw new Error("Writing draft not found");
+  const raw = (row.rawAnswer ?? {}) as Record<string, unknown>;
+  if (raw.type !== "writing") {
+    throw new Error("Item is not a writing answer");
+  }
+
+  const totalScore = score.scores.reduce((sum, s) => sum + s.score, 0);
+  const totalMax = score.scores.reduce((sum, s) => sum + s.max, 0);
+  const updatedRaw = {
+    ...raw,
+    score: {
+      total: totalScore,
+      max: totalMax,
+      scores: score.scores,
+      summary: score.summary,
+      errors: score.errors,
+    },
+  };
+
+  await db().transaction(async (tx) => {
+    await tx
+      .update(answers)
+      .set({ rawAnswer: updatedRaw, autoScore: totalScore })
+      .where(eq(answers.id, row.id));
+    await tx.delete(rubricScores).where(eq(rubricScores.answerId, row.id));
+    await tx.insert(rubricScores).values(
+      score.scores.map((c) => ({
+        answerId: row.id,
+        criterionCode: c.code,
+        criterionLabel: c.label,
+        score: c.score,
+        maxScore: c.max,
+        notes: c.notes,
+      })),
+    );
+  });
+
+  return { answerId: row.id };
+}
+
 export async function submitMockAttempt(params: {
   userId: string;
   attemptId: string;
@@ -377,27 +525,47 @@ export async function readMockResults(
         items: [],
       };
       for (const planItem of planSec.items) {
+        // Per-item max: writing is rubric-based (FIPI K1..K5 — total 6/10/14
+        // depending on format), all other mock kinds are worth 1 point each.
+        const itemMax = planItemMax(planItem.stimulus);
         const a = byItemId.get(planItem.id);
         if (a) {
+          // For writing items where the AI grader hasn't run yet, the
+          // answer row exists with no rubric_scores — `a.score` is 0 and
+          // `a.max` defaults to 1 (the rubric_score-less default). Use
+          // the planItem's true max so the denominator stays honest.
+          const effectiveMax =
+            isWritingPlanItem(planItem.stimulus) && a.max === 1 && a.score === 0
+              ? itemMax
+              : a.max;
+          const correct = isWritingPlanItem(planItem.stimulus)
+            ? // "correct" is meaningless for writing — neutral marker
+              // until graded.
+              a.score === effectiveMax
+              ? true
+              : null
+            : a.score === effectiveMax
+              ? true
+              : a.score === 0
+                ? false
+                : null;
           sec.totalScore += a.score;
-          sec.maxScore += a.max;
+          sec.maxScore += effectiveMax;
           sec.attempts += 1;
           sec.items.push({
             itemId: planItem.id,
-            correct: a.score === a.max ? true : a.score === 0 ? false : null,
+            correct,
             score: a.score,
-            maxScore: a.max,
+            maxScore: effectiveMax,
             expected: a.notes,
             studentResponse: stringifyStudentResponse(
               a.rawAnswer,
               a.itemCorrectAnswers,
             ),
             taskTemplateTitle: planItem.taskTemplateTitle,
+            writing: writingPayload(planItem.stimulus, a.rawAnswer),
           });
         } else {
-          // Auto-graded mock items are all worth 1 point in PR #7. Keep
-          // the denominator honest by counting them anyway.
-          const itemMax = 1;
           sec.maxScore += itemMax;
           sec.items.push({
             itemId: planItem.id,
@@ -407,6 +575,7 @@ export async function readMockResults(
             expected: null,
             studentResponse: "",
             taskTemplateTitle: planItem.taskTemplateTitle,
+            writing: writingPayload(planItem.stimulus, null),
           });
         }
       }
@@ -492,12 +661,52 @@ function stringifyStudentResponse(
 ): string {
   if (!rawAnswer || typeof rawAnswer !== "object") return "";
   const r = rawAnswer as Record<string, unknown>;
+  if (r.type === "writing" && typeof r.text === "string") return r.text;
   if (typeof r.value === "string") return r.value;
   if (typeof r.choice === "number") {
     const options = extractOptions(itemPayload);
     return options[r.choice] ?? `Вариант ${String.fromCharCode(65 + r.choice)}`;
   }
   return "";
+}
+
+function isWritingPlanItem(
+  stim: { kind: string },
+): boolean {
+  return stim.kind === "writing_email" || stim.kind === "writing_essay";
+}
+
+function writingPayload(
+  stim: { kind: string; format?: string; minWords?: number; maxWords?: number; hardMin?: number },
+  rawAnswer: unknown,
+): MockSectionResult["items"][number]["writing"] {
+  if (!isWritingPlanItem(stim)) return undefined;
+  const format = stim.format as WritingFormat | undefined;
+  const descriptor = WRITING_DESCRIPTORS.find((d) => d.format === format);
+  if (!descriptor) return undefined;
+  const raw = (rawAnswer ?? {}) as Record<string, unknown>;
+  const wordCount =
+    typeof raw.wordCount === "number" ? (raw.wordCount as number) : 0;
+  type WritingPayload = NonNullable<
+    MockSectionResult["items"][number]["writing"]
+  >;
+  const score = (raw.score ?? null) as WritingPayload["score"];
+  return {
+    format: descriptor.format,
+    wordCount,
+    minWords: descriptor.minWords,
+    maxWords: descriptor.maxWords,
+    hardMin: descriptor.hardMin,
+    score,
+  };
+}
+
+function planItemMax(stim: { kind: string; format?: string }): number {
+  if (!isWritingPlanItem(stim)) return 1;
+  const format = stim.format as WritingFormat | undefined;
+  const descriptor = WRITING_DESCRIPTORS.find((d) => d.format === format);
+  if (!descriptor) return 1;
+  return totalWritingMax(descriptor.rubric);
 }
 
 function extractOptions(payload: unknown): string[] {
