@@ -17,6 +17,7 @@ type Props = {
   examLabel: string;
   title: string;
   instructions: string;
+  taskTemplateId: string;
   items: ReadingPracticeItem[];
   initialStats: { correct: number; total: number };
   generateConfig?: {
@@ -47,10 +48,13 @@ export function ReadingPractice({
   examLabel,
   title,
   instructions,
+  taskTemplateId,
   items,
   initialStats,
   generateConfig,
 }: Props) {
+  const [restarting, setRestarting] = React.useState(false);
+  const [restartError, setRestartError] = React.useState<string | null>(null);
   const [generating, setGenerating] = React.useState(false);
   const [genError, setGenError] = React.useState<string | null>(null);
   const [index, setIndex] = React.useState(0);
@@ -85,11 +89,31 @@ export function ReadingPractice({
     reset();
   };
 
-  const onRestart = () => {
-    setIndex(0);
-    setSessionStats({ correct: 0, attempted: 0 });
-    reset();
-  };
+  async function onRestart() {
+    if (restarting) return;
+    setRestarting(true);
+    setRestartError(null);
+    try {
+      const res = await fetch("/api/practice/restart", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ taskTemplateId }),
+      });
+      if (!res.ok) {
+        const payload = await safeJson(res);
+        throw new Error(
+          (payload?.error as string) || `Ошибка ${res.status}`,
+        );
+      }
+      setIndex(0);
+      setSessionStats({ correct: 0, attempted: 0 });
+      reset();
+    } catch (err) {
+      setRestartError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRestarting(false);
+    }
+  }
 
   async function onGenerate() {
     if (!generateConfig || generating) return;
@@ -220,7 +244,9 @@ export function ReadingPractice({
             заданий ({pct}%).
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button onClick={onRestart}>Начать новый круг</Button>
+            <Button onClick={onRestart} disabled={restarting}>
+              {restarting ? "Закрываем попытку…" : "Начать новый круг"}
+            </Button>
             {generateConfig && (
               <Button
                 variant="outline"
@@ -233,6 +259,9 @@ export function ReadingPractice({
               </Button>
             )}
           </div>
+          {restartError && (
+            <p className="text-xs text-red-600">⚠ {restartError}</p>
+          )}
           {genError && (
             <p className="text-xs text-red-600">⚠ {genError}</p>
           )}

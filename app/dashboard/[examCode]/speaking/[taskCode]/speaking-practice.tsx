@@ -23,6 +23,7 @@ import { totalSpeakingMax } from "@/lib/speaking/descriptors";
 type Props = {
   examLabel: string;
   taskCode: string;
+  taskTemplateId: string;
   title: string;
   instructions: string;
   descriptor: SpeakingTaskDescriptor;
@@ -55,12 +56,15 @@ type SubmitResult = {
 export function SpeakingPractice({
   examLabel,
   taskCode,
+  taskTemplateId,
   title,
   instructions,
   descriptor,
   items,
   initialStats,
 }: Props) {
+  const [restarting, setRestarting] = React.useState(false);
+  const [restartError, setRestartError] = React.useState<string | null>(null);
   const [index, setIndex] = React.useState(0);
   const [phase, setPhase] = React.useState<Phase>("idle");
   const [secondsLeft, setSecondsLeft] = React.useState(0);
@@ -295,14 +299,46 @@ export function SpeakingPractice({
             %).
           </p>
           <Button
-            onClick={() => {
-              setIndex(0);
-              reset();
-              setSessionStats({ attempts: 0, scoreSum: 0, maxSum: 0 });
+            onClick={async () => {
+              if (restarting) return;
+              setRestarting(true);
+              setRestartError(null);
+              try {
+                const res = await fetch("/api/practice/restart", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ taskTemplateId }),
+                });
+                if (!res.ok) {
+                  let msg = `Ошибка ${res.status}`;
+                  try {
+                    const payload = (await res.json()) as {
+                      error?: string;
+                    };
+                    if (payload.error) msg = payload.error;
+                  } catch {
+                    /* ignore */
+                  }
+                  throw new Error(msg);
+                }
+                setIndex(0);
+                reset();
+                setSessionStats({ attempts: 0, scoreSum: 0, maxSum: 0 });
+              } catch (err) {
+                setRestartError(
+                  err instanceof Error ? err.message : String(err),
+                );
+              } finally {
+                setRestarting(false);
+              }
             }}
+            disabled={restarting}
           >
-            Начать новый круг
+            {restarting ? "Закрываем попытку…" : "Начать новый круг"}
           </Button>
+          {restartError && (
+            <p className="text-xs text-red-600">⚠ {restartError}</p>
+          )}
         </CardContent>
       </Card>
     );

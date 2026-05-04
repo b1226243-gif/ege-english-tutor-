@@ -60,6 +60,7 @@ export default async function SpeakingTaskPage({
       <SpeakingPractice
         examLabel={exam.shortName}
         taskCode={taskCode}
+        taskTemplateId={template.id}
         title={template.title}
         instructions={template.instructions}
         descriptor={template.descriptor}
