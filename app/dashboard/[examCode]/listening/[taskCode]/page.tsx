@@ -61,6 +61,7 @@ export default async function ListeningTaskPage({
         examLabel={exam.shortName}
         title={template.title}
         instructions={template.instructions}
+        taskTemplateId={template.id}
         items={items}
         initialStats={stats}
       />

@@ -17,6 +17,7 @@ type Props = {
   examLabel: string;
   title: string;
   instructions: string;
+  taskTemplateId: string;
   items: ListeningPracticeItem[];
   initialStats: { correct: number; total: number };
 };
@@ -46,9 +47,12 @@ export function ListeningPractice({
   examLabel,
   title,
   instructions,
+  taskTemplateId,
   items,
   initialStats,
 }: Props) {
+  const [restarting, setRestarting] = React.useState(false);
+  const [restartError, setRestartError] = React.useState<string | null>(null);
   const [index, setIndex] = React.useState(0);
   const [choice, setChoice] = React.useState<number | null>(null);
   const [result, setResult] = React.useState<AnswerResult | null>(null);
@@ -81,11 +85,31 @@ export function ListeningPractice({
     reset();
   };
 
-  const onRestart = () => {
-    setIndex(0);
-    setSessionStats({ correct: 0, attempted: 0 });
-    reset();
-  };
+  async function onRestart() {
+    if (restarting) return;
+    setRestarting(true);
+    setRestartError(null);
+    try {
+      const res = await fetch("/api/practice/restart", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ taskTemplateId }),
+      });
+      if (!res.ok) {
+        const payload = await safeJson(res);
+        throw new Error(
+          (payload?.error as string) || `Ошибка ${res.status}`,
+        );
+      }
+      setIndex(0);
+      setSessionStats({ correct: 0, attempted: 0 });
+      reset();
+    } catch (err) {
+      setRestartError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRestarting(false);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -188,7 +212,12 @@ export function ListeningPractice({
             <span className="font-semibold">{sessionStats.attempted}</span>{" "}
             заданий ({pct}%).
           </p>
-          <Button onClick={onRestart}>Начать новый круг</Button>
+          <Button onClick={onRestart} disabled={restarting}>
+            {restarting ? "Закрываем попытку…" : "Начать новый круг"}
+          </Button>
+          {restartError && (
+            <p className="text-xs text-red-600">⚠ {restartError}</p>
+          )}
         </CardContent>
       </Card>
     );
