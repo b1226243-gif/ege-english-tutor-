@@ -37,9 +37,7 @@ export default async function ProgressPage({
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect(
-      `/sign-in?callbackUrl=${encodeURIComponent(`/dashboard/${examCode}/progress`)}`,
-    );
+    redirect(`/sign-in?next=/dashboard/${examCode}/progress`);
   }
 
   const sp = await searchParams;

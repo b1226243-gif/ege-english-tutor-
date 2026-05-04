@@ -83,6 +83,13 @@ export function SpeakingPractice({
   const streamRef = React.useRef<MediaStream | null>(null);
   const timerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingStartRef = React.useRef<number | null>(null);
+  // Mirror of recordingUrl so the unmount cleanup (with empty deps) can
+  // see the latest blob URL and revoke it. The closure over the state
+  // captures the initial value (null), so without the ref we'd leak.
+  const recordingUrlRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    recordingUrlRef.current = recordingUrl;
+  }, [recordingUrl]);
 
   const item = items[index];
   const completed = index >= items.length;
@@ -93,9 +100,8 @@ export function SpeakingPractice({
     return () => {
       stopTimer();
       stopStream();
-      if (recordingUrl) URL.revokeObjectURL(recordingUrl);
+      if (recordingUrlRef.current) URL.revokeObjectURL(recordingUrlRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function stopTimer() {
@@ -259,6 +265,8 @@ export function SpeakingPractice({
         scoreSum: s.scoreSum + data.totalScore,
         maxSum: s.maxSum + data.totalMax,
       }));
+      // Drop the "Обрабатываем…" badge — the result card is now visible.
+      setPhase("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setPhase("done");
