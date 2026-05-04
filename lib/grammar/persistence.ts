@@ -246,28 +246,40 @@ export async function gradeAndPersistAnswer(params: {
     params.response,
   );
 
-  const [answer] = await db()
-    .insert(answers)
-    .values({
-      attemptId,
-      itemId: item.id,
-      rawAnswer: params.response,
-      autoScore: correct ? 1 : 0,
-    })
-    .returning({ id: answers.id });
+  const answerId = await db().transaction(async (tx) => {
+    const [upserted] = await tx
+      .insert(answers)
+      .values({
+        attemptId,
+        itemId: item.id,
+        rawAnswer: params.response,
+        autoScore: correct ? 1 : 0,
+      })
+      .onConflictDoUpdate({
+        target: [answers.attemptId, answers.itemId],
+        set: {
+          rawAnswer: params.response,
+          autoScore: correct ? 1 : 0,
+        },
+      })
+      .returning({ id: answers.id });
 
-  await db().insert(rubricScores).values({
-    answerId: answer.id,
-    criterionCode: "CORRECT",
-    criterionLabel: "Правильность ответа",
-    score: correct ? 1 : 0,
-    maxScore: 1,
+    await tx.delete(rubricScores).where(eq(rubricScores.answerId, upserted.id));
+    await tx.insert(rubricScores).values({
+      answerId: upserted.id,
+      criterionCode: "CORRECT",
+      criterionLabel: "Правильность ответа",
+      score: correct ? 1 : 0,
+      maxScore: 1,
+    });
+
+    return upserted.id;
   });
 
   return {
     correct,
     expected,
-    answerId: answer.id,
+    answerId,
     itemPayload: item.payload,
     itemStimulus: item.stimulusText,
   };
