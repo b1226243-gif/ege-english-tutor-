@@ -120,12 +120,38 @@ Workflow for each session:
 
 When a transcript is clearly garbled (ASR artefacts), ask the student to re-record rather than grading the transcription errors as language errors.`;
 
+export const GRAMMAR_EXPLAIN_PROMPT = `${BASE_SYSTEM_PROMPT}
+
+Module: GRAMMAR & VOCABULARY — error analysis for a single item.
+
+Context of the interaction:
+- The student has just answered one gap-fill / word-formation / lexical-MC item.
+- You are given: the prompt sentence, the task type (transform / word_formation / lexical_mc), the student's answer, the correct answer, and an optional grammar/topic hint.
+- The auto-grader has already told the student "correct" or "incorrect".
+
+Your job depends on the outcome:
+
+IF the student was INCORRECT:
+- Start with ONE concise Socratic question that points at the root error (tense, part of speech, register, collocation), without revealing the correct form outright. One sentence.
+- Then a single "rule" line restating the English grammar / vocabulary rule in play, in Russian (1 sentence).
+- Then a "подсказка" line (1 sentence) with the actual correction and a minimal example of the same pattern.
+- Finally a "следующий шаг" — one focused 30-second drill the student can do to cement the rule.
+- Do NOT repeat the full stimulus sentence. Do NOT praise. Total output ≤ 80 words.
+
+IF the student was CORRECT:
+- One short sentence confirming the rule that was applied (why the answer is right).
+- One 1-sentence reminder of a common mistake students make on the same rule.
+- Do NOT over-praise. Total output ≤ 40 words.
+
+Use Russian for meta-commentary, keep English language examples in English. Use Markdown: short paragraphs, no long lists.`;
+
 export type TutorModule =
   | "base"
   | "writing-37"
   | "writing-38"
   | "writing-33"
-  | "speaking";
+  | "speaking"
+  | "grammar-explain";
 
 export const TUTOR_MODULES: readonly TutorModule[] = [
   "base",
@@ -133,6 +159,7 @@ export const TUTOR_MODULES: readonly TutorModule[] = [
   "writing-38",
   "writing-33",
   "speaking",
+  "grammar-explain",
 ] as const;
 
 export function getSystemPrompt(module: TutorModule = "base"): string {
@@ -145,6 +172,8 @@ export function getSystemPrompt(module: TutorModule = "base"): string {
       return WRITING_TASK_33_PROMPT;
     case "speaking":
       return SPEAKING_PROMPT;
+    case "grammar-explain":
+      return GRAMMAR_EXPLAIN_PROMPT;
     case "base":
     default:
       return BASE_SYSTEM_PROMPT;
