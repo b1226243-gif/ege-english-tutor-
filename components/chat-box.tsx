@@ -95,11 +95,7 @@ export function ChatBox({
             Submit your work on the left to receive FIPI-aligned feedback here.
           </p>
         )}
-        {error && (
-          <p className="text-sm text-red-600">
-            {error.message || "Something went wrong."}
-          </p>
-        )}
+        {error && <ErrorBanner error={error} />}
       </div>
 
       <form onSubmit={onSubmit} className="flex gap-2 items-end">
@@ -124,6 +120,76 @@ export function ChatBox({
       </form>
     </div>
   );
+}
+
+/**
+ * Upstream errors (OpenAI 429/5xx, Auth.js 401, Zod 400) arrive here either
+ * as a plain `Error` with JSON text in `.message` or as a thrown stream
+ * event. We parse the common shapes and render a friendly banner with a
+ * concrete next step, instead of dumping raw JSON at the student.
+ */
+function ErrorBanner({ error }: { error: Error }) {
+  const parsed = parseError(error);
+  return (
+    <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+      <div className="font-medium">{parsed.title}</div>
+      {parsed.hint && (
+        <div className="mt-1 text-xs text-red-800/80 dark:text-red-300/80">
+          {parsed.hint}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function parseError(error: Error): { title: string; hint?: string } {
+  const raw = error.message || "";
+  // The AI SDK often surfaces JSON strings — try to parse them.
+  let payload: unknown = null;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    // keep raw
+  }
+
+  const looksLikeQuota =
+    /quota|rate[_ ]?limit|insufficient_quota/i.test(raw);
+  const looksLikeAuth = /unauthori[sz]ed|401/i.test(raw);
+  const looksLikeMissingKey = /OPENAI_API_KEY|not configured/i.test(raw);
+
+  if (looksLikeMissingKey) {
+    return {
+      title: "OPENAI_API_KEY не настроен",
+      hint:
+        "Добавьте ключ в .env.local (см. .env.example) и перезапустите сервер.",
+    };
+  }
+  if (looksLikeQuota) {
+    return {
+      title: "Лимит OpenAI исчерпан",
+      hint:
+        "Пополните баланс OpenAI: https://platform.openai.com/settings/organization/billing/overview",
+    };
+  }
+  if (looksLikeAuth) {
+    return {
+      title: "Сессия истекла",
+      hint: "Обновите страницу и войдите снова.",
+    };
+  }
+
+  if (payload && typeof payload === "object") {
+    const p = payload as { error?: unknown };
+    const err = p.error;
+    if (typeof err === "string") return { title: err };
+    if (err && typeof err === "object") {
+      const e = err as { message?: unknown };
+      if (typeof e.message === "string") return { title: e.message };
+    }
+  }
+  return {
+    title: raw || "Что-то пошло не так. Попробуйте ещё раз.",
+  };
 }
 
 function MessageBubble({
