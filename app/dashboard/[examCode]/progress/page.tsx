@@ -12,9 +12,11 @@ import {
 import { EXAM_DISPLAY, isSupportedExamCode } from "@/lib/exams";
 import {
   SOURCE_FILTERS,
+  getAiOverview,
   getProgressOverview,
   isSourceFilter,
 } from "@/lib/progress/queries";
+import type { AiSectionRollup, AiCriterionRollup } from "@/lib/progress/queries";
 import type { SectionKind } from "@/lib/db/schema";
 
 const SECTION_LABEL: Record<SectionKind, string> = {
@@ -44,11 +46,17 @@ export default async function ProgressPage({
   const sourceParam = typeof sp.source === "string" ? sp.source : "all";
   const source = isSourceFilter(sourceParam) ? sourceParam : "all";
 
-  const overview = await getProgressOverview({
-    userId: session.user.id,
-    examCode,
-    source,
-  });
+  const [overview, ai] = await Promise.all([
+    getProgressOverview({
+      userId: session.user.id,
+      examCode,
+      source,
+    }),
+    getAiOverview({
+      userId: session.user.id,
+      examCode,
+    }),
+  ]);
 
   const exam = EXAM_DISPLAY[examCode];
   const totalPct =
@@ -75,8 +83,9 @@ export default async function ProgressPage({
           Прогресс по темам · {exam.shortName}
         </h1>
         <p className="text-sm text-zinc-500">
-          Точность по объективным секциям (Чтение / Аудирование / Грамматика).
-          Письмо и Устная часть оцениваются AI и не входят в этот расчёт.
+          Точность по объективным секциям (Чтение / Аудирование / Грамматика)
+          сверху. Ниже — суммарные баллы по AI-секциям (Письмо / Устная)
+          по К-критериям FIPI.
         </p>
       </div>
 
@@ -216,8 +225,101 @@ export default async function ProgressPage({
           </div>
         </>
       )}
+
+      <AiSections sections={ai.bySection} />
     </div>
   );
+}
+
+function AiSections({ sections }: { sections: AiSectionRollup[] }) {
+  if (sections.length === 0) {
+    return (
+      <div>
+        <h2 className="text-lg font-semibold mb-3">AI-секции (Письмо · Устная)</h2>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Пока нет AI-оценок</CardTitle>
+            <CardDescription>
+              Сдайте пробный экзамен или запросите AI-оценку у ответа Письма /
+              Устной — здесь появятся суммы баллов по К-критериям FIPI.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-3">
+        AI-секции (Письмо · Устная)
+      </h2>
+      <div className="grid gap-3 md:grid-cols-2">
+        {sections.map((s) => {
+          const pct =
+            s.maxSum > 0 ? Math.round((s.scoreSum / s.maxSum) * 100) : 0;
+          return (
+            <Card key={s.sectionKind}>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  {SECTION_LABEL[s.sectionKind] ?? s.sectionKind}
+                </CardTitle>
+                <CardDescription>
+                  {s.scoreSum}/{s.maxSum} баллов · {pct}% · оценено{" "}
+                  {s.graded}{" "}
+                  {pluralAnswers(s.graded)}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <ProgressBar correct={s.scoreSum} attempted={s.maxSum} />
+                <ul className="space-y-1.5 pt-1 text-xs">
+                  {s.byCriterion.map((c) => (
+                    <CriterionRow key={c.code} c={c} />
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CriterionRow({ c }: { c: AiCriterionRollup }) {
+  const pct = c.maxSum > 0 ? Math.round((c.scoreSum / c.maxSum) * 100) : 0;
+  const tone =
+    pct >= 75
+      ? "text-green-700 dark:text-green-300"
+      : pct >= 50
+        ? "text-amber-700 dark:text-amber-300"
+        : "text-red-700 dark:text-red-300";
+  return (
+    <li className="flex items-center justify-between gap-2">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-1">
+          <span className="font-mono font-medium">{c.code}</span>
+          {c.label && (
+            <span className="truncate text-zinc-500">— {c.label}</span>
+          )}
+        </div>
+      </div>
+      <div className="shrink-0 tabular-nums">
+        <span className="font-medium">
+          {c.scoreSum}/{c.maxSum}
+        </span>{" "}
+        <span className={tone}>({pct}%)</span>
+      </div>
+    </li>
+  );
+}
+
+function pluralAnswers(n: number): string {
+  const lastTwo = n % 100;
+  if (lastTwo >= 11 && lastTwo <= 14) return "ответов";
+  const last = n % 10;
+  if (last === 1) return "ответ";
+  if (last >= 2 && last <= 4) return "ответа";
+  return "ответов";
 }
 
 function SourceFilter({

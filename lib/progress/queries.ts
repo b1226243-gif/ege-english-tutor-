@@ -5,6 +5,7 @@ import {
   answers,
   attempts,
   items,
+  rubricScores,
   sections,
   taskTemplates,
 } from "@/lib/db/schema";
@@ -121,6 +122,145 @@ export async function getProgressOverview(params: {
       correct: Number(r.correct),
     })),
   };
+}
+
+/**
+ * Per-criterion roll-up for one AI-graded section (writing or speaking).
+ * `attempts` here means the number of distinct answers that had at least
+ * one rubric_score row (one per task — task 37 + task 38 in EGE writing,
+ * tasks 1..4 in EGE speaking). `scoreSum` / `maxSum` add across all
+ * criteria across all those answers.
+ */
+export type AiCriterionRollup = {
+  code: string;
+  label: string | null;
+  scoreSum: number;
+  maxSum: number;
+  graded: number;
+};
+
+export type AiSectionRollup = {
+  sectionKind: SectionKind;
+  graded: number;
+  scoreSum: number;
+  maxSum: number;
+  byCriterion: AiCriterionRollup[];
+};
+
+export type AiOverview = {
+  bySection: AiSectionRollup[];
+};
+
+/**
+ * Aggregations for the AI-graded sections (writing / speaking).
+ *
+ * Unlike the objective sections we cannot sum a 0/1 `auto_score`, since
+ * AI grades on continuous K-criteria rubrics. Instead we sum
+ * `rubric_score.score` (and `max_score`) per criterion code per section
+ * and let the UI render a "graded N/M" + per-K bar instead of an
+ * accuracy percentage.
+ *
+ * Source filter is intentionally NOT applied here — writing/speaking
+ * curated banks don't have meaningful "fipi_demo vs ai_generated"
+ * provenance, and the FIPI manifest importer (PR #10) only seeds
+ * objective items. If you arrive on this page with `?source=` set
+ * we still show the same AI roll-up to keep the picture complete.
+ */
+export async function getAiOverview(params: {
+  userId: string;
+  examCode: ExamCode;
+}): Promise<AiOverview> {
+  const baseWhere = and(
+    eq(attempts.userId, params.userId),
+    eq(attempts.examCode, params.examCode),
+    sql`${sections.kind} = ANY(ARRAY['writing','speaking']::section_kind[])`,
+  );
+
+  const rows = await db()
+    .select({
+      sectionKind: sections.kind,
+      criterionCode: rubricScores.criterionCode,
+      criterionLabel: rubricScores.criterionLabel,
+      score: rubricScores.score,
+      max: rubricScores.maxScore,
+      answerId: rubricScores.answerId,
+    })
+    .from(rubricScores)
+    .innerJoin(answers, eq(rubricScores.answerId, answers.id))
+    .innerJoin(attempts, eq(answers.attemptId, attempts.id))
+    .innerJoin(items, eq(answers.itemId, items.id))
+    .innerJoin(taskTemplates, eq(items.taskTemplateId, taskTemplates.id))
+    .innerJoin(sections, eq(taskTemplates.sectionId, sections.id))
+    .where(baseWhere);
+
+  type AccCrit = {
+    code: string;
+    label: string | null;
+    scoreSum: number;
+    maxSum: number;
+    answerIds: Set<string>;
+  };
+  const sectionMap = new Map<
+    SectionKind,
+    {
+      answerIds: Set<string>;
+      scoreSum: number;
+      maxSum: number;
+      criteria: Map<string, AccCrit>;
+    }
+  >();
+  for (const r of rows) {
+    const kind = r.sectionKind as SectionKind;
+    if (!sectionMap.has(kind)) {
+      sectionMap.set(kind, {
+        answerIds: new Set(),
+        scoreSum: 0,
+        maxSum: 0,
+        criteria: new Map(),
+      });
+    }
+    const sec = sectionMap.get(kind)!;
+    sec.answerIds.add(r.answerId);
+    sec.scoreSum += r.score;
+    sec.maxSum += r.max;
+
+    const crit = sec.criteria.get(r.criterionCode) ?? {
+      code: r.criterionCode,
+      label: r.criterionLabel,
+      scoreSum: 0,
+      maxSum: 0,
+      answerIds: new Set<string>(),
+    };
+    crit.scoreSum += r.score;
+    crit.maxSum += r.max;
+    crit.answerIds.add(r.answerId);
+    sec.criteria.set(r.criterionCode, crit);
+  }
+
+  // Stable display order: writing first, then speaking. Criteria sort
+  // alphanumerically by code (K1..K5 sorts naturally).
+  const orderedKinds: SectionKind[] = ["writing", "speaking"];
+  const bySection: AiSectionRollup[] = [];
+  for (const kind of orderedKinds) {
+    const sec = sectionMap.get(kind);
+    if (!sec) continue;
+    bySection.push({
+      sectionKind: kind,
+      graded: sec.answerIds.size,
+      scoreSum: sec.scoreSum,
+      maxSum: sec.maxSum,
+      byCriterion: [...sec.criteria.values()]
+        .sort((a, b) => a.code.localeCompare(b.code))
+        .map((c) => ({
+          code: c.code,
+          label: c.label,
+          scoreSum: c.scoreSum,
+          maxSum: c.maxSum,
+          graded: c.answerIds.size,
+        })),
+    });
+  }
+  return { bySection };
 }
 
 export const SOURCE_FILTERS: ReadonlyArray<{
