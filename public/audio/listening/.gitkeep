@@ -1,0 +1,5 @@
+Pre-rendered TTS mp3 files live here. Generate via:
+  pnpm listening:generate-audio
+
+The listening UI falls back to browser speechSynthesis when the mp3 is
+missing, so committing the mp3s is optional.
