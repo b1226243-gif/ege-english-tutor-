@@ -169,9 +169,9 @@ async function insertItem(
       stimulusText: it.question,
       correctAnswers: it.answer,
       metadata: {
-        ...(it.metadata ?? {}),
         ...baseMetadata,
         passage: it.passage,
+        ...(it.metadata ?? {}),
       },
     });
     return;
@@ -183,22 +183,11 @@ async function insertItem(
       source: "fipi_demo",
       stimulusText: it.question,
       correctAnswers: it.answer,
-      // The listening practice UI reads transcript/voice from
-      // `items.assets` (validated by ListeningAssetsSchema in
-      // lib/listening/persistence.ts). We mirror the seed-listening
-      // shape here so FIPI-imported items render the same way.
-      assets: {
-        transcript: it.transcript,
-        ...(it.voice ? { voice: it.voice } : {}),
-      },
       metadata: {
-        ...(it.metadata ?? {}),
         ...baseMetadata,
-        // Keep transcript in metadata too — the dedup query at
-        // isDuplicate() (above) still keys off metadata->>'transcript'
-        // for backwards compatibility with already-imported items.
         transcript: it.transcript,
         ...(it.voice ? { voice: it.voice } : {}),
+        ...(it.metadata ?? {}),
       },
     });
     return;
@@ -211,8 +200,8 @@ async function insertItem(
     stimulusText: it.stimulusText,
     correctAnswers: it.answer,
     metadata: {
-      ...(it.metadata ?? {}),
       ...baseMetadata,
+      ...(it.metadata ?? {}),
     },
   });
 }

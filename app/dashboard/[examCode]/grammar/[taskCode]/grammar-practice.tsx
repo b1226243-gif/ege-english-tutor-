@@ -30,6 +30,10 @@ type Props = {
   instructions: string;
   items: PracticeItem[];
   initialStats: { correct: number; total: number };
+  generateConfig?: {
+    examCode: string;
+    type: "transform" | "word_formation" | "lexical_mc";
+  };
 };
 
 type AnswerResult = {
@@ -51,7 +55,10 @@ export function GrammarPractice({
   instructions,
   items,
   initialStats,
+  generateConfig,
 }: Props) {
+  const [generating, setGenerating] = React.useState(false);
+  const [genError, setGenError] = React.useState<string | null>(null);
   const [index, setIndex] = React.useState(0);
   const [draft, setDraft] = React.useState<string>("");
   const [choice, setChoice] = React.useState<number | null>(null);
@@ -92,6 +99,36 @@ export function GrammarPractice({
     setSessionStats({ correct: 0, attempted: 0 });
     reset();
   };
+
+  async function onGenerate() {
+    if (!generateConfig || generating) return;
+    setGenerating(true);
+    setGenError(null);
+    try {
+      const res = await fetch("/api/generate/grammar", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          examCode: generateConfig.examCode,
+          type: generateConfig.type,
+          count: 3,
+        }),
+      });
+      if (!res.ok) {
+        const payload = await safeJson(res);
+        throw new Error(
+          (payload?.error as string) || `Ошибка ${res.status}`,
+        );
+      }
+      // The endpoint returned freshly persisted items, but we don't get
+      // their DB ids back — so refetch is the cleanest path. Reload the
+      // page to pick up the new bank.
+      window.location.reload();
+    } catch (err) {
+      setGenError(err instanceof Error ? err.message : String(err));
+      setGenerating(false);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -202,7 +239,23 @@ export function GrammarPractice({
             <span className="font-semibold">{sessionStats.attempted}</span>{" "}
             заданий ({pct}%).
           </p>
-          <Button onClick={onRestart}>Начать новый круг</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={onRestart}>Начать новый круг</Button>
+            {generateConfig && (
+              <Button
+                variant="outline"
+                onClick={onGenerate}
+                disabled={generating}
+              >
+                {generating
+                  ? "Генерируем…"
+                  : "Сгенерировать ещё 3 задания (AI)"}
+              </Button>
+            )}
+          </div>
+          {genError && (
+            <p className="text-xs text-red-600">⚠ {genError}</p>
+          )}
         </CardContent>
       </Card>
     );

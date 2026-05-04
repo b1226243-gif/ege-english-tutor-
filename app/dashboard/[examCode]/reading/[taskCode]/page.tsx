@@ -63,6 +63,18 @@ export default async function ReadingTaskPage({
         instructions={template.instructions}
         items={items}
         initialStats={stats}
+        generateConfig={(() => {
+          const suffix = taskCode.split(".").pop();
+          if (
+            suffix === "matching_headings" ||
+            suffix === "matching_statements" ||
+            suffix === "mc_detail" ||
+            suffix === "true_false_stated"
+          ) {
+            return { examCode, format: suffix };
+          }
+          return undefined;
+        })()}
       />
     </div>
   );
