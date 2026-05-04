@@ -17,6 +17,7 @@ import {
   readMockResults,
   submitMockAttempt,
 } from "@/lib/mock/persistence";
+import { WritingResultItem } from "./writing-result-item";
 
 /**
  * Mock-exam results protocol.
@@ -97,27 +98,22 @@ export default async function MockResultsPage({
                 </span>
               </div>
               <div className="text-xs text-zinc-500">
-                Первичный балл по объективным секциям
+                Первичный балл (объективные секции + AI-проверенное письмо)
               </div>
             </div>
             <div>
               <div className="text-3xl font-semibold">{percent}%</div>
               <div className="text-xs text-zinc-500">
-                Доля верных ответов
+                Доля от максимума
               </div>
             </div>
           </div>
           <p className="text-xs text-zinc-500">
-            Письмо и устная часть в этом пробнике не оцениваются — для
-            полной FIPI-оценки откройте их отдельные модули ниже.
+            Письмо включено в пробник: черновик сохранён, нажмите «Оценить
+            AI» под нужным заданием для FIPI-разбора. Устная часть пока
+            оценивается отдельно через её модуль.
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
-            <Link
-              className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-900/40"
-              href={`/dashboard/${examCode}/writing`}
-            >
-              Открыть Письмо <ArrowRight className="h-3 w-3" />
-            </Link>
             <Link
               className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-900/40"
               href={`/dashboard/${examCode}/speaking`}
@@ -157,49 +153,66 @@ export default async function MockResultsPage({
           </CardHeader>
           <CardContent>
             <ul className="divide-y text-sm">
-              {s.items.map((it, idx) => (
-                <li
-                  key={it.itemId}
-                  className="flex flex-wrap items-center justify-between gap-2 py-2"
-                >
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2 text-xs text-zinc-500">
-                      №{idx + 1} · {it.taskTemplateTitle}
-                    </div>
-                    <div className="font-medium">
-                      Ваш ответ:{" "}
-                      <span className="font-normal">
-                        {it.studentResponse || (
-                          <span className="text-zinc-400">— не отвечено —</span>
-                        )}
-                      </span>
-                    </div>
-                    {it.correct === false && it.expected && (
-                      <div className="text-xs text-zinc-500">
-                        Правильный ответ:{" "}
-                        <span className="font-medium">{it.expected}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs",
-                      it.correct === true
-                        ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100"
-                        : it.correct === false
-                          ? "border-red-300 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-100"
-                          : "border-zinc-300 bg-zinc-50 text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900/40 dark:text-zinc-100",
-                    )}
+              {s.items.map((it, idx) =>
+                it.writing ? (
+                  <WritingResultItem
+                    key={it.itemId}
+                    attemptId={attemptId}
+                    itemId={it.itemId}
+                    index={idx}
+                    taskTemplateTitle={it.taskTemplateTitle}
+                    studentResponse={it.studentResponse}
+                    initialScore={it.writing.score}
+                    wordCount={it.writing.wordCount}
+                    minWords={it.writing.minWords}
+                    maxWords={it.writing.maxWords}
+                    hardMin={it.writing.hardMin}
+                    maxScore={it.maxScore}
+                  />
+                ) : (
+                  <li
+                    key={it.itemId}
+                    className="flex flex-wrap items-center justify-between gap-2 py-2"
                   >
-                    {it.correct === true ? (
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                    ) : it.correct === false ? (
-                      <XCircle className="h-3.5 w-3.5" />
-                    ) : null}
-                    {it.score}/{it.maxScore}
-                  </div>
-                </li>
-              ))}
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2 text-xs text-zinc-500">
+                        №{idx + 1} · {it.taskTemplateTitle}
+                      </div>
+                      <div className="font-medium">
+                        Ваш ответ:{" "}
+                        <span className="font-normal">
+                          {it.studentResponse || (
+                            <span className="text-zinc-400">— не отвечено —</span>
+                          )}
+                        </span>
+                      </div>
+                      {it.correct === false && it.expected && (
+                        <div className="text-xs text-zinc-500">
+                          Правильный ответ:{" "}
+                          <span className="font-medium">{it.expected}</span>
+                        </div>
+                      )}
+                    </div>
+                    <div
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs",
+                        it.correct === true
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100"
+                          : it.correct === false
+                            ? "border-red-300 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-100"
+                            : "border-zinc-300 bg-zinc-50 text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900/40 dark:text-zinc-100",
+                      )}
+                    >
+                      {it.correct === true ? (
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      ) : it.correct === false ? (
+                        <XCircle className="h-3.5 w-3.5" />
+                      ) : null}
+                      {it.score}/{it.maxScore}
+                    </div>
+                  </li>
+                ),
+              )}
             </ul>
           </CardContent>
         </Card>

@@ -11,6 +11,10 @@ import type { SupportedExamCode } from "@/lib/exams";
 import { GrammarAnswerSchema } from "@/lib/grammar/types";
 import { ListeningAnswerSchema } from "@/lib/listening/types";
 import { ReadingAnswerSchema } from "@/lib/reading/types";
+import {
+  WRITING_DESCRIPTORS,
+  type WritingFormat,
+} from "@/lib/writing/descriptors";
 import type {
   MockPlan,
   MockSectionKind,
@@ -40,6 +44,9 @@ const ITEMS_PER_TEMPLATE: Record<MockSectionKind, number> = {
   listening: 3,
   reading: 3,
   grammar: 3,
+  // Writing only ever picks ONE prompt per template — students never write
+  // 3 × Task 37 in a single sitting on a real exam.
+  writing: 1,
 };
 
 const TIME_BUDGET_SECONDS: Record<
@@ -50,11 +57,15 @@ const TIME_BUDGET_SECONDS: Record<
     listening: 30 * 60,
     reading: 30 * 60,
     grammar: 40 * 60,
+    // ЕГЭ Task 37 (≈30 min) + Task 38 (≈50 min) = 80 min for the writing section.
+    writing: 80 * 60,
   },
   oge_en: {
     listening: 30 * 60,
     reading: 30 * 60,
     grammar: 30 * 60,
+    // ОГЭ Task 33 — single email, FIPI suggests 30 min.
+    writing: 30 * 60,
   },
 };
 
@@ -62,12 +73,18 @@ const SECTION_DISPLAY_NAMES: Record<MockSectionKind, string> = {
   listening: "Аудирование",
   reading: "Чтение",
   grammar: "Грамматика и лексика",
+  writing: "Письмо",
 };
 
 export async function buildMockPlan(
   examCode: SupportedExamCode,
 ): Promise<MockPlan> {
-  const kinds: MockSectionKind[] = ["listening", "reading", "grammar"];
+  const kinds: MockSectionKind[] = [
+    "listening",
+    "reading",
+    "grammar",
+    "writing",
+  ];
   const sectionPlans: MockSectionPlan[] = [];
 
   for (const kind of kinds) {
@@ -172,6 +189,73 @@ function rowToPlanItem(
         voice: assets.voice ?? null,
         question: r.stimulusText ?? "",
         options: parsed.data.options,
+      },
+    };
+  }
+  if (kind === "writing") {
+    const assets = (r.assets ?? {}) as {
+      stimulus?: unknown;
+      title?: string;
+    };
+    const stim = assets.stimulus as
+      | {
+          kind: "task_33_email" | "task_37_email";
+          friendName: string;
+          friendLetter: string;
+          questions: string[];
+        }
+      | {
+          kind: "task_38_essay";
+          topic: string;
+          prompt: string;
+          table: { caption: string; rows: { label: string; value: string }[] };
+          planLabels: string[];
+        }
+      | undefined;
+    if (!stim) return null;
+    // The descriptor that matches the prompt format — drives word limits.
+    const format: WritingFormat =
+      stim.kind === "task_38_essay"
+        ? "task_38_essay"
+        : stim.kind === "task_37_email"
+          ? "task_37_email"
+          : "task_33_email";
+    const descriptor = WRITING_DESCRIPTORS.find((d) => d.format === format);
+    if (!descriptor) return null;
+    if (stim.kind === "task_38_essay") {
+      return {
+        id: r.itemId,
+        taskTemplateCode: r.templateCode,
+        taskTemplateTitle: r.templateTitle,
+        stimulus: {
+          kind: "writing_essay",
+          format: "task_38_essay",
+          taskNumber: descriptor.fipiTaskNumber,
+          prompt: r.stimulusText ?? "",
+          topic: stim.topic,
+          table: stim.table,
+          planLabels: stim.planLabels,
+          minWords: descriptor.minWords,
+          maxWords: descriptor.maxWords,
+          hardMin: descriptor.hardMin,
+        },
+      };
+    }
+    return {
+      id: r.itemId,
+      taskTemplateCode: r.templateCode,
+      taskTemplateTitle: r.templateTitle,
+      stimulus: {
+        kind: "writing_email",
+        format: stim.kind === "task_37_email" ? "task_37_email" : "task_33_email",
+        taskNumber: descriptor.fipiTaskNumber,
+        prompt: r.stimulusText ?? "",
+        friendName: stim.friendName,
+        friendLetter: stim.friendLetter,
+        questions: stim.questions,
+        minWords: descriptor.minWords,
+        maxWords: descriptor.maxWords,
+        hardMin: descriptor.hardMin,
       },
     };
   }
