@@ -115,7 +115,7 @@ export function getSections(
 }
 
 export type ExtraPracticeMode = {
-  kind: "mock";
+  kind: "mock" | "progress";
   displayName: string;
   description: string;
   href: string;
@@ -134,6 +134,19 @@ export function getMockMode(
         ? "ЕГЭ · 100 минут на 3 объективные секции (Аудирование, Чтение, Грамматика). Итоговый протокол с разбором."
         : "ОГЭ · 90 минут на 3 объективные секции. Секции Письмо и Устная — отдельными модулями.",
     href: `/dashboard/${examCode}/mock`,
+    status: "available",
+  };
+}
+
+export function getProgressMode(
+  examCode: SupportedExamCode,
+): ExtraPracticeMode {
+  return {
+    kind: "progress",
+    displayName: "Прогресс по темам",
+    description:
+      "Точность по объективным секциям и темам. Фильтр по источнику заданий: ФИПИ / AI / авторские.",
+    href: `/dashboard/${examCode}/progress`,
     status: "available",
   };
 }
