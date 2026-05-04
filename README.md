@@ -152,8 +152,25 @@ pnpm db:push
 ### 4b. Seed exam catalogue + starter content
 
 ```bash
-pnpm db:seed           # exams + sections
-pnpm db:seed:grammar   # grammar task_templates + starter item bank (~25 items)
+pnpm db:seed             # exams + sections
+pnpm db:seed:grammar     # grammar task_templates + starter item bank
+pnpm db:seed:reading     # reading
+pnpm db:seed:listening   # listening (transcripts only; audio via listening:generate-audio)
+pnpm db:seed:writing     # writing task_templates + starter item bank
+pnpm db:seed:speaking    # speaking task_templates + starter item bank
+```
+
+### Growing the bank from FIPI demo material
+
+Use `pnpm db:import:fipi <manifest.json>` to import hand-curated content
+from FIPI demo variants (or any other source). The manifest format,
+workflow, and dedup keys are documented in
+[`data/fipi/README.md`](data/fipi/README.md). Two example manifests in
+that folder demonstrate the format:
+
+```bash
+pnpm db:import:fipi data/fipi/ege_en.example_reading_mc_detail.json --dry-run
+pnpm db:import:fipi data/fipi/ege_en.example_reading_mc_detail.json
 ```
 
 Both scripts are idempotent. The grammar bank is a small hand-curated set
