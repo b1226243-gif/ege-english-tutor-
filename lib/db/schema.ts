@@ -8,6 +8,7 @@ import {
   pgEnum,
   primaryKey,
   boolean,
+  unique,
 } from "drizzle-orm/pg-core";
 import type { AdapterAccountType } from "next-auth/adapters";
 
@@ -300,29 +301,45 @@ export const attempts = pgTable("attempt", {
   completedAt: timestamp("completed_at", { withTimezone: true }),
   totalScore: integer("total_score"),
   maxScore: integer("max_score"),
+  /**
+   * Mock-mode plan (sections + items + budgets) frozen at start time. Null
+   * for non-mock attempts and for legacy mock attempts created before this
+   * column existed. Lets `/api/mock/plan` recover the *exact* plan after
+   * localStorage is cleared, instead of re-randomising and orphaning
+   * already-saved answers.
+   */
+  plan: jsonb("plan"),
 });
 
 /**
- * One student response per item within an attempt.
+ * One student response per item within an attempt. The DB-level
+ * UNIQUE(attempt_id, item_id) makes the upsert in `saveMockAnswer`
+ * race-proof — concurrent requests for the same item collapse to a
+ * single row instead of inserting duplicates that would inflate the
+ * score on the results page.
  */
-export const answers = pgTable("answer", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  attemptId: uuid("attempt_id")
-    .notNull()
-    .references(() => attempts.id, { onDelete: "cascade" }),
-  itemId: uuid("item_id")
-    .notNull()
-    .references(() => items.id, { onDelete: "cascade" }),
-  /** Raw response (JSON). Shape depends on item type. */
-  rawAnswer: jsonb("raw_answer").notNull(),
-  /** Result of auto-grading (null when AI-graded only). */
-  autoScore: integer("auto_score"),
-  /** AI tutor feedback (Markdown). */
-  aiFeedback: text("ai_feedback"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const answers = pgTable(
+  "answer",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    attemptId: uuid("attempt_id")
+      .notNull()
+      .references(() => attempts.id, { onDelete: "cascade" }),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    /** Raw response (JSON). Shape depends on item type. */
+    rawAnswer: jsonb("raw_answer").notNull(),
+    /** Result of auto-grading (null when AI-graded only). */
+    autoScore: integer("auto_score"),
+    /** AI tutor feedback (Markdown). */
+    aiFeedback: text("ai_feedback"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [unique("answer_attempt_item_unique").on(t.attemptId, t.itemId)],
+);
 
 /**
  * Per-criterion breakdown of an answer's score (the thing that drives the
