@@ -63,6 +63,17 @@ export default async function GrammarTaskPage({
         instructions={template.instructions}
         items={items}
         initialStats={stats}
+        generateConfig={(() => {
+          const suffix = taskCode.split(".").pop();
+          if (
+            suffix === "transform" ||
+            suffix === "word_formation" ||
+            suffix === "lexical_mc"
+          ) {
+            return { examCode, type: suffix };
+          }
+          return undefined;
+        })()}
       />
     </div>
   );

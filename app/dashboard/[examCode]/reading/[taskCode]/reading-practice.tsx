@@ -19,6 +19,14 @@ type Props = {
   instructions: string;
   items: ReadingPracticeItem[];
   initialStats: { correct: number; total: number };
+  generateConfig?: {
+    examCode: string;
+    format:
+      | "matching_headings"
+      | "matching_statements"
+      | "mc_detail"
+      | "true_false_stated";
+  };
 };
 
 type AnswerResult = {
@@ -41,7 +49,10 @@ export function ReadingPractice({
   instructions,
   items,
   initialStats,
+  generateConfig,
 }: Props) {
+  const [generating, setGenerating] = React.useState(false);
+  const [genError, setGenError] = React.useState<string | null>(null);
   const [index, setIndex] = React.useState(0);
   const [choice, setChoice] = React.useState<number | null>(null);
   const [result, setResult] = React.useState<AnswerResult | null>(null);
@@ -79,6 +90,33 @@ export function ReadingPractice({
     setSessionStats({ correct: 0, attempted: 0 });
     reset();
   };
+
+  async function onGenerate() {
+    if (!generateConfig || generating) return;
+    setGenerating(true);
+    setGenError(null);
+    try {
+      const res = await fetch("/api/generate/reading", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          examCode: generateConfig.examCode,
+          format: generateConfig.format,
+          count: 2,
+        }),
+      });
+      if (!res.ok) {
+        const payload = await safeJson(res);
+        throw new Error(
+          (payload?.error as string) || `Ошибка ${res.status}`,
+        );
+      }
+      window.location.reload();
+    } catch (err) {
+      setGenError(err instanceof Error ? err.message : String(err));
+      setGenerating(false);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -181,7 +219,23 @@ export function ReadingPractice({
             <span className="font-semibold">{sessionStats.attempted}</span>{" "}
             заданий ({pct}%).
           </p>
-          <Button onClick={onRestart}>Начать новый круг</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={onRestart}>Начать новый круг</Button>
+            {generateConfig && (
+              <Button
+                variant="outline"
+                onClick={onGenerate}
+                disabled={generating}
+              >
+                {generating
+                  ? "Генерируем…"
+                  : "Сгенерировать ещё 2 задания (AI)"}
+              </Button>
+            )}
+          </div>
+          {genError && (
+            <p className="text-xs text-red-600">⚠ {genError}</p>
+          )}
         </CardContent>
       </Card>
     );

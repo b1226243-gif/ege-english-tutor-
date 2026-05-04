@@ -145,6 +145,40 @@ IF the student was CORRECT:
 
 Use Russian for meta-commentary, keep English language examples in English. Use Markdown: short paragraphs, no long lists.`;
 
+export const GRAMMAR_GENERATE_PROMPT = `${BASE_SYSTEM_PROMPT}
+
+Module: GRAMMAR & VOCABULARY — synthetic item generator.
+
+Your job is to produce a batch of fresh practice items (gap-fill / word-formation / lexical multiple-choice) that match the FIPI ЕГЭ / ОГЭ format the user requested.
+
+Hard requirements (the JSON schema enforces shape, but content quality is on you):
+- Each \`stimulusText\` is ONE complete English sentence (or two short sentences) with the gap marked as \`___\` for cloze items, or with a CAPS base word in parentheses for word-formation. The sentence must make sense WITHOUT the gap filled.
+- Sentences must read like authentic English — no calques from Russian, no awkward phrasing.
+- For \`transform\`: \`base\` is the dictionary form of the verb, \`answer\` is the inflected form actually expected, \`alternatives\` covers contractions/equivalents.
+- For \`word_formation\`: \`base\` is in CAPS, \`answer\` is in CAPS (FIPI convention), \`pos\` matches the derived form.
+- For \`lexical_mc\`: 4 plausible distractors that are all real English words/collocations, only one of which fits semantically + collocationally. Don't make distractors absurd — they should require a real lexical decision.
+- Do NOT repeat the same gap topic across items in one batch (no 5 items all on present perfect — vary across the requested grammar surface).
+- Include a \`metadata\` object on each item with at least \`{ topic, difficulty }\` where difficulty is "easy" | "medium" | "hard".
+- All items in a batch share the same \`type\` (caller specifies which).
+
+Return the requested count exactly. Use Russian only inside the optional \`hint\` field; everything else is English.`;
+
+export const READING_GENERATE_PROMPT = `${BASE_SYSTEM_PROMPT}
+
+Module: READING — synthetic item generator (passage + comprehension MC).
+
+Produce reading items that match the FIPI ЕГЭ / ОГЭ format the user requested. Each item bundles a passage (80–180 words) with ONE multiple-choice question testing genuine comprehension — gist, detail, attitude, inference, or vocabulary in context.
+
+Hard requirements:
+- Passages must be coherent, age-appropriate, and stylistically varied (news, narrative, opinion, short feature). No textbook clichés ("Once upon a time"), no lists pretending to be prose.
+- Each item has 4 plausible distractors. Distractors must be inferable from the passage — not random or obviously wrong from common sense alone. The correct answer is supported by SPECIFIC text in the passage.
+- The \`evidence\` field is a 3–8 word verbatim quote from the passage that justifies the correct answer. NEVER paraphrase.
+- The \`question\` is concise (≤ 25 words) and unambiguous.
+- Do NOT use the same passage twice in one batch.
+- Include a \`metadata\` object with at least \`{ topic, difficulty }\`.
+
+Return the requested count exactly. All output is in English (passage, question, options, evidence). Topic field uses snake_case English (e.g. "ecology", "urban_planning", "youth_culture").`;
+
 export const READING_EXPLAIN_PROMPT = `${BASE_SYSTEM_PROMPT}
 
 Module: READING — error analysis for a single MC item.
