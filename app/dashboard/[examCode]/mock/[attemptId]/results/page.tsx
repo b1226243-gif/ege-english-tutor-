@@ -17,6 +17,7 @@ import {
   readMockResults,
   submitMockAttempt,
 } from "@/lib/mock/persistence";
+import { SpeakingResultItem } from "./speaking-result-item";
 import { WritingResultItem } from "./writing-result-item";
 
 /**
@@ -109,9 +110,9 @@ export default async function MockResultsPage({
             </div>
           </div>
           <p className="text-xs text-zinc-500">
-            Письмо включено в пробник: черновик сохранён, нажмите «Оценить
-            AI» под нужным заданием для FIPI-разбора. Устная часть пока
-            оценивается отдельно через её модуль.
+            Письмо и устная часть включены в пробник: черновик и
+            транскрипт сохранены, нажмите «Оценить AI» под нужным
+            заданием для FIPI-разбора по К-критериям.
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
             <Link
@@ -167,6 +168,19 @@ export default async function MockResultsPage({
                     minWords={it.writing.minWords}
                     maxWords={it.writing.maxWords}
                     hardMin={it.writing.hardMin}
+                    maxScore={it.maxScore}
+                  />
+                ) : it.speaking ? (
+                  <SpeakingResultItem
+                    key={it.itemId}
+                    attemptId={attemptId}
+                    itemId={it.itemId}
+                    index={idx}
+                    taskTemplateTitle={it.taskTemplateTitle}
+                    taskRange={it.speaking.taskRange}
+                    audioDurationSeconds={it.speaking.audioDurationSeconds}
+                    transcript={it.speaking.transcript}
+                    initialScore={it.speaking.score}
                     maxScore={it.maxScore}
                   />
                 ) : (

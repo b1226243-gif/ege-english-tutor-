@@ -248,6 +248,83 @@ async function savePendingWritingAnswer(
   return { answerId };
 }
 
+/**
+ * Persist a Whisper transcript as a pending speaking answer (no AI score
+ * yet). Mirrors `savePendingWritingAnswer` — the runner uploads the audio
+ * blob to `/api/mock/speaking/transcribe`, which transcribes via Whisper
+ * and calls this helper. AI scoring stays deferred until the student
+ * clicks "Оценить AI" on the results page.
+ */
+export async function savePendingSpeakingAnswer(params: {
+  userId: string;
+  attemptId: string;
+  itemId: string;
+  transcript: string;
+  audioDurationSeconds: number;
+}): Promise<{ answerId: string }> {
+  const { userId, attemptId, itemId, transcript, audioDurationSeconds } = params;
+  const attempt = await getMockAttempt(attemptId);
+  if (!attempt) throw new Error("Mock attempt not found");
+  if (attempt.userId !== userId) throw new Error("Forbidden");
+  if (attempt.status !== "in_progress") {
+    throw new Error("Mock attempt is already submitted");
+  }
+
+  const [item] = await db()
+    .select({
+      id: items.id,
+      sectionKind: sections.kind,
+      templateConfig: taskTemplates.config,
+    })
+    .from(items)
+    .innerJoin(taskTemplates, eq(items.taskTemplateId, taskTemplates.id))
+    .innerJoin(sections, eq(taskTemplates.sectionId, sections.id))
+    .where(eq(items.id, itemId))
+    .limit(1);
+  if (!item) throw new Error("Item not found");
+  if (item.sectionKind !== "speaking") {
+    throw new Error("Item is not a speaking item");
+  }
+
+  const cfg = (item.templateConfig ?? {}) as { format?: string };
+  const format = cfg.format ?? "read_aloud";
+
+  const rawAnswer = {
+    type: "speaking" as const,
+    format,
+    transcript: transcript.trim(),
+    audioDurationSeconds: Math.max(0, Math.round(audioDurationSeconds)),
+    score: null,
+  };
+
+  const answerId = await db().transaction(async (tx) => {
+    const [upserted] = await tx
+      .insert(answers)
+      .values({
+        attemptId,
+        itemId,
+        rawAnswer,
+        autoScore: null,
+      })
+      .onConflictDoUpdate({
+        target: [answers.attemptId, answers.itemId],
+        set: {
+          rawAnswer,
+          autoScore: null,
+        },
+      })
+      .returning({ id: answers.id });
+
+    // Re-recording invalidates any prior AI score.
+    await tx
+      .delete(rubricScores)
+      .where(eq(rubricScores.answerId, upserted.id));
+
+    return upserted.id;
+  });
+  return { answerId };
+}
+
 function countWords(text: string): number {
   const trimmed = text.trim();
   if (!trimmed) return 0;
@@ -407,6 +484,74 @@ export async function persistMockWritingScore(params: {
   return { answerId: row.id };
 }
 
+/**
+ * Persist an AI-generated speaking score for a mock answer. Mirrors
+ * `persistMockWritingScore` exactly — same idempotent
+ * (update + delete + reinsert) shape, just with a `speaking`-typed raw
+ * answer.
+ */
+export async function persistMockSpeakingScore(params: {
+  userId: string;
+  attemptId: string;
+  itemId: string;
+  score: {
+    total: number;
+    max: number;
+    scores: { code: string; label: string; score: number; max: number; notes: string }[];
+    summary: string;
+    errors: { quote: string; question: string }[];
+  };
+}): Promise<{ answerId: string }> {
+  const { userId, attemptId, itemId, score } = params;
+  const attempt = await getMockAttempt(attemptId);
+  if (!attempt) throw new Error("Mock attempt not found");
+  if (attempt.userId !== userId) throw new Error("Forbidden");
+
+  const [row] = await db()
+    .select({ id: answers.id, rawAnswer: answers.rawAnswer })
+    .from(answers)
+    .where(and(eq(answers.attemptId, attemptId), eq(answers.itemId, itemId)))
+    .limit(1);
+  if (!row) throw new Error("Speaking transcript not found");
+  const raw = (row.rawAnswer ?? {}) as Record<string, unknown>;
+  if (raw.type !== "speaking") {
+    throw new Error("Item is not a speaking answer");
+  }
+
+  const totalScore = score.scores.reduce((sum, s) => sum + s.score, 0);
+  const totalMax = score.scores.reduce((sum, s) => sum + s.max, 0);
+  const updatedRaw = {
+    ...raw,
+    score: {
+      total: totalScore,
+      max: totalMax,
+      scores: score.scores,
+      summary: score.summary,
+      errors: score.errors,
+    },
+  };
+
+  await db().transaction(async (tx) => {
+    await tx
+      .update(answers)
+      .set({ rawAnswer: updatedRaw, autoScore: totalScore })
+      .where(eq(answers.id, row.id));
+    await tx.delete(rubricScores).where(eq(rubricScores.answerId, row.id));
+    await tx.insert(rubricScores).values(
+      score.scores.map((c) => ({
+        answerId: row.id,
+        criterionCode: c.code,
+        criterionLabel: c.label,
+        score: c.score,
+        maxScore: c.max,
+        notes: c.notes,
+      })),
+    );
+  });
+
+  return { answerId: row.id };
+}
+
 export async function submitMockAttempt(params: {
   userId: string;
   attemptId: string;
@@ -526,21 +671,23 @@ export async function readMockResults(
       };
       for (const planItem of planSec.items) {
         // Per-item max: writing is rubric-based (FIPI K1..K5 — total 6/10/14
-        // depending on format), all other mock kinds are worth 1 point each.
+        // depending on format), speaking is rubric-based (FIPI K1..K3 — varies
+        // per task), all other mock kinds are worth 1 point each.
         const itemMax = planItemMax(planItem.stimulus);
+        const writingItem = isWritingPlanItem(planItem.stimulus);
+        const speakingItem = isSpeakingPlanItem(planItem.stimulus);
+        const aiGradedItem = writingItem || speakingItem;
         const a = byItemId.get(planItem.id);
         if (a) {
-          // For writing items where the AI grader hasn't run yet, the
-          // answer row exists with no rubric_scores — `a.score` is 0 and
-          // `a.max` defaults to 1 (the rubric_score-less default). Use
-          // the planItem's true max so the denominator stays honest.
+          // For writing/speaking items where the AI grader hasn't run yet,
+          // the answer row exists with no rubric_scores — `a.score` is 0
+          // and `a.max` defaults to 1. Use the planItem's true max so the
+          // denominator stays honest.
           const effectiveMax =
-            isWritingPlanItem(planItem.stimulus) && a.max === 1 && a.score === 0
-              ? itemMax
-              : a.max;
-          const correct = isWritingPlanItem(planItem.stimulus)
-            ? // "correct" is meaningless for writing — neutral marker
-              // until graded.
+            aiGradedItem && a.max === 1 && a.score === 0 ? itemMax : a.max;
+          const correct = aiGradedItem
+            ? // "correct" is meaningless for AI-graded items — neutral
+              // marker until graded.
               a.score === effectiveMax
               ? true
               : null
@@ -564,6 +711,7 @@ export async function readMockResults(
             ),
             taskTemplateTitle: planItem.taskTemplateTitle,
             writing: writingPayload(planItem.stimulus, a.rawAnswer),
+            speaking: speakingPayload(planItem.stimulus, a.rawAnswer),
           });
         } else {
           sec.maxScore += itemMax;
@@ -576,6 +724,7 @@ export async function readMockResults(
             studentResponse: "",
             taskTemplateTitle: planItem.taskTemplateTitle,
             writing: writingPayload(planItem.stimulus, null),
+            speaking: speakingPayload(planItem.stimulus, null),
           });
         }
       }
@@ -662,6 +811,9 @@ function stringifyStudentResponse(
   if (!rawAnswer || typeof rawAnswer !== "object") return "";
   const r = rawAnswer as Record<string, unknown>;
   if (r.type === "writing" && typeof r.text === "string") return r.text;
+  if (r.type === "speaking" && typeof r.transcript === "string") {
+    return r.transcript;
+  }
   if (typeof r.value === "string") return r.value;
   if (typeof r.choice === "number") {
     const options = extractOptions(itemPayload);
@@ -674,6 +826,12 @@ function isWritingPlanItem(
   stim: { kind: string },
 ): boolean {
   return stim.kind === "writing_email" || stim.kind === "writing_essay";
+}
+
+function isSpeakingPlanItem(
+  stim: { kind: string },
+): boolean {
+  return stim.kind.startsWith("speaking_");
 }
 
 function writingPayload(
@@ -701,12 +859,48 @@ function writingPayload(
   };
 }
 
-function planItemMax(stim: { kind: string; format?: string }): number {
+function planItemMax(stim: {
+  kind: string;
+  format?: string;
+  maxScore?: number;
+}): number {
+  if (isSpeakingPlanItem(stim)) {
+    return typeof stim.maxScore === "number" ? stim.maxScore : 1;
+  }
   if (!isWritingPlanItem(stim)) return 1;
   const format = stim.format as WritingFormat | undefined;
   const descriptor = WRITING_DESCRIPTORS.find((d) => d.format === format);
   if (!descriptor) return 1;
   return totalWritingMax(descriptor.rubric);
+}
+
+function speakingPayload(
+  stim: {
+    kind: string;
+    format?: string;
+    fipiTaskRange?: string;
+    maxScore?: number;
+  },
+  rawAnswer: unknown,
+): MockSectionResult["items"][number]["speaking"] {
+  if (!isSpeakingPlanItem(stim)) return undefined;
+  const raw = (rawAnswer ?? {}) as Record<string, unknown>;
+  const transcript = typeof raw.transcript === "string" ? raw.transcript : "";
+  const audioDurationSeconds =
+    typeof raw.audioDurationSeconds === "number"
+      ? (raw.audioDurationSeconds as number)
+      : 0;
+  type SpeakingPayload = NonNullable<
+    MockSectionResult["items"][number]["speaking"]
+  >;
+  const score = (raw.score ?? null) as SpeakingPayload["score"];
+  return {
+    format: (stim.format ?? "read_aloud") as SpeakingPayload["format"],
+    taskRange: stim.fipiTaskRange ?? "",
+    audioDurationSeconds,
+    transcript,
+    score,
+  };
 }
 
 function extractOptions(payload: unknown): string[] {

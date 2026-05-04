@@ -12,6 +12,11 @@ import { GrammarAnswerSchema } from "@/lib/grammar/types";
 import { ListeningAnswerSchema } from "@/lib/listening/types";
 import { ReadingAnswerSchema } from "@/lib/reading/types";
 import {
+  getSpeakingDescriptors,
+  totalSpeakingMax,
+} from "@/lib/speaking/descriptors";
+import { SpeakingAnswerSchema } from "@/lib/speaking/types";
+import {
   WRITING_DESCRIPTORS,
   type WritingFormat,
 } from "@/lib/writing/descriptors";
@@ -47,6 +52,8 @@ const ITEMS_PER_TEMPLATE: Record<MockSectionKind, number> = {
   // Writing only ever picks ONE prompt per template — students never write
   // 3 × Task 37 in a single sitting on a real exam.
   writing: 1,
+  // Same as writing — exactly one prompt per FIPI speaking task.
+  speaking: 1,
 };
 
 const TIME_BUDGET_SECONDS: Record<
@@ -59,6 +66,9 @@ const TIME_BUDGET_SECONDS: Record<
     grammar: 40 * 60,
     // ЕГЭ Task 37 (≈30 min) + Task 38 (≈50 min) = 80 min for the writing section.
     writing: 80 * 60,
+    // ЕГЭ speaking — sum of FIPI per-task budgets (90+90+90+80+200+90+150 ≈ 13 min)
+    // plus a small transition padding. 17 min mirrors the real-exam allotment.
+    speaking: 17 * 60,
   },
   oge_en: {
     listening: 30 * 60,
@@ -66,6 +76,8 @@ const TIME_BUDGET_SECONDS: Record<
     grammar: 30 * 60,
     // ОГЭ Task 33 — single email, FIPI suggests 30 min.
     writing: 30 * 60,
+    // ОГЭ speaking — 90+120 + 240 + 90+120 = 660s ≈ 11 min, padded to 15 min.
+    speaking: 15 * 60,
   },
 };
 
@@ -74,6 +86,7 @@ const SECTION_DISPLAY_NAMES: Record<MockSectionKind, string> = {
   reading: "Чтение",
   grammar: "Грамматика и лексика",
   writing: "Письмо",
+  speaking: "Устная часть",
 };
 
 export async function buildMockPlan(
@@ -84,6 +97,7 @@ export async function buildMockPlan(
     "reading",
     "grammar",
     "writing",
+    "speaking",
   ];
   const sectionPlans: MockSectionPlan[] = [];
 
@@ -140,12 +154,21 @@ async function buildSectionPlan(
 
   const planItems: MockSectionPlanItem[] = [];
   for (const r of filtered) {
-    const item = rowToPlanItem(kind, r);
+    const item = rowToPlanItem(examCode, kind, r);
     if (item) planItems.push(item);
   }
 
-  // shuffle across templates so the student doesn't see all matching first
-  shuffleInPlace(planItems);
+  if (kind === "speaking") {
+    // Speaking tasks are ordered by FIPI task number — no shuffling.
+    planItems.sort((a, b) => {
+      const aRange = "fipiTaskRange" in a.stimulus ? a.stimulus.fipiTaskRange : "";
+      const bRange = "fipiTaskRange" in b.stimulus ? b.stimulus.fipiTaskRange : "";
+      return aRange.localeCompare(bRange);
+    });
+  } else {
+    // shuffle across templates so the student doesn't see all matching first
+    shuffleInPlace(planItems);
+  }
 
   return {
     kind,
@@ -167,6 +190,7 @@ type Row = {
 };
 
 function rowToPlanItem(
+  examCode: SupportedExamCode,
   kind: MockSectionKind,
   r: Row,
 ): MockSectionPlanItem | null {
@@ -256,6 +280,103 @@ function rowToPlanItem(
         minWords: descriptor.minWords,
         maxWords: descriptor.maxWords,
         hardMin: descriptor.hardMin,
+      },
+    };
+  }
+  if (kind === "speaking") {
+    const parsed = SpeakingAnswerSchema.safeParse(r.correctAnswers);
+    if (!parsed.success) return null;
+    // Map the task_template code suffix to the FIPI descriptor (so we know
+    // prepare/speak timings + the FIPI task range without re-deriving them).
+    const codeSuffix = r.templateCode.split(".").pop() ?? "";
+    const descriptor = getSpeakingDescriptors(examCode).find(
+      (d) => d.codeSuffix === codeSuffix,
+    );
+    if (!descriptor) return null;
+    const data = parsed.data;
+    const maxScore = totalSpeakingMax(descriptor.rubric);
+    if (data.type === "speaking_read_aloud") {
+      return {
+        id: r.itemId,
+        taskTemplateCode: r.templateCode,
+        taskTemplateTitle: r.templateTitle,
+        stimulus: {
+          kind: "speaking_read_aloud",
+          format: "read_aloud",
+          fipiTaskRange: descriptor.fipiTaskRange,
+          prepareSeconds: descriptor.timing.prepareSeconds,
+          speakSeconds: descriptor.timing.speakSeconds,
+          maxScore,
+          passage: data.passage,
+        },
+      };
+    }
+    if (data.type === "speaking_ask_questions") {
+      return {
+        id: r.itemId,
+        taskTemplateCode: r.templateCode,
+        taskTemplateTitle: r.templateTitle,
+        stimulus: {
+          kind: "speaking_ask_questions",
+          format: "ask_questions",
+          fipiTaskRange: descriptor.fipiTaskRange,
+          prepareSeconds: descriptor.timing.prepareSeconds,
+          speakSeconds: descriptor.timing.speakSeconds,
+          maxScore,
+          advert: data.advert,
+          aspects: data.aspects,
+        },
+      };
+    }
+    if (data.type === "speaking_interview") {
+      return {
+        id: r.itemId,
+        taskTemplateCode: r.templateCode,
+        taskTemplateTitle: r.templateTitle,
+        stimulus: {
+          kind: "speaking_interview",
+          format: "interview",
+          fipiTaskRange: descriptor.fipiTaskRange,
+          prepareSeconds: descriptor.timing.prepareSeconds,
+          speakSeconds: descriptor.timing.speakSeconds,
+          maxScore,
+          context: data.context,
+          questions: data.questions,
+        },
+      };
+    }
+    if (data.type === "speaking_picture_compare") {
+      return {
+        id: r.itemId,
+        taskTemplateCode: r.templateCode,
+        taskTemplateTitle: r.templateTitle,
+        stimulus: {
+          kind: "speaking_picture_compare",
+          format: "picture_compare",
+          fipiTaskRange: descriptor.fipiTaskRange,
+          prepareSeconds: descriptor.timing.prepareSeconds,
+          speakSeconds: descriptor.timing.speakSeconds,
+          maxScore,
+          topic: data.topic,
+          imageCaptions: data.imageCaptions,
+          plan: data.plan,
+        },
+      };
+    }
+    // monologue_topic
+    return {
+      id: r.itemId,
+      taskTemplateCode: r.templateCode,
+      taskTemplateTitle: r.templateTitle,
+      stimulus: {
+        kind: "speaking_monologue",
+        format: "monologue_topic",
+        fipiTaskRange: descriptor.fipiTaskRange,
+        prepareSeconds: descriptor.timing.prepareSeconds,
+        speakSeconds: descriptor.timing.speakSeconds,
+        maxScore,
+        topic: data.topic,
+        plan: data.plan,
       },
     };
   }
