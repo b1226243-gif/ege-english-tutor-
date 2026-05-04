@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# generated listening audio (run `pnpm listening:generate-audio` to (re)create)
+/public/audio/listening/*.mp3
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
