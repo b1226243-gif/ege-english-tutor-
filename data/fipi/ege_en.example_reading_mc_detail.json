@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "examCode": "ege_en",
+  "source": "example_demo_v0",
+  "sections": [
+    {
+      "section": "reading",
+      "taskTemplateCode": "ege_en.reading.mc_detail",
+      "items": [
+        {
+          "passage": "Helena had spent eight years training to row across the Atlantic, and the start line at La Gomera should have felt like a triumph. Instead it felt like a deadline. Her boat, the *Wave Strider*, had been rebuilt twice — once after a storm in the Bay of Biscay and once after a sponsor's grant arrived too late to fund the original carbon hull. The cheaper aluminium replacement was thirty kilograms heavier, and on a 4,800-kilometre crossing those kilograms would matter every single stroke. \"People assume I worry about sharks or storms,\" she said the night before launch. \"What actually keeps me up is the maths.\"",
+          "question": "Why does Helena describe the start line as a deadline rather than a triumph?",
+          "answer": {
+            "type": "reading_mc",
+            "options": [
+              "Funding delays forced her to use a heavier replacement hull.",
+              "She was afraid of sharks and rough weather.",
+              "Sponsors had set her a strict completion date.",
+              "Eight years of training had left her physically exhausted."
+            ],
+            "answer": 0,
+            "evidence": "the cheaper aluminium replacement was thirty kilograms heavier"
+          },
+          "metadata": { "topic": "adventure", "difficulty": "medium" }
+        },
+        {
+          "passage": "The town council of Hartwell announced last Tuesday that all new residential developments inside the city ring road must include at least one tree per dwelling, planted before the certificate of occupancy is granted. The policy follows a 2024 study from the local university which found that streets with mature canopies reduced summer surface temperatures by an average of 4.6 °C. Developers' associations have responded with concern, arguing that small inner-city plots cannot accommodate the planting requirement without sacrificing parking. The council, however, has confirmed that hybrid solutions — communal courtyards, shared gardens — will satisfy the rule, provided the tree-to-dwelling ratio is preserved.",
+          "question": "What is the council's response to developers who say small plots cannot fit a tree per dwelling?",
+          "answer": {
+            "type": "reading_mc",
+            "options": [
+              "Developers can postpone planting until five years after occupancy.",
+              "Communal courtyards and shared gardens count, as long as the ratio is preserved.",
+              "The rule applies only to plots above a minimum size threshold.",
+              "The council has agreed to revise the rule and consult further."
+            ],
+            "answer": 1,
+            "evidence": "hybrid solutions — communal courtyards, shared gardens — will satisfy the rule, provided the tree-to-dwelling ratio is preserved"
+          },
+          "metadata": { "topic": "urban_planning", "difficulty": "medium" }
+        },
+        {
+          "passage": "When the deep-sea robotics lab at Mokuoloe shifted to a four-day work week last spring, no one expected the engineers to publish *more* papers. The shift was framed as a wellbeing initiative, modelled on a Reykjavík pilot. But by the end of the second quarter the team had filed three submissions to the Journal of Robotic Systems — a rate they had not matched in five years. Lab director Mei Chao attributes the bump to fewer interruptions, not longer focused blocks: \"We did not work harder. We just stopped having Friday meetings whose only purpose was to schedule the following Friday's meetings.\"",
+          "question": "What does Mei Chao say is the main reason for the increase in submissions?",
+          "answer": {
+            "type": "reading_mc",
+            "options": [
+              "The team had longer continuous blocks of focused work.",
+              "Cancelling self-referential meetings reduced interruptions.",
+              "The Reykjavík pilot study provided new methodology.",
+              "Engineers were given financial incentives per paper."
+            ],
+            "answer": 1,
+            "evidence": "We just stopped having Friday meetings whose only purpose was to schedule the following Friday's meetings"
+          },
+          "metadata": { "topic": "workplace", "difficulty": "medium" }
+        }
+      ]
+    }
+  ]
+}
