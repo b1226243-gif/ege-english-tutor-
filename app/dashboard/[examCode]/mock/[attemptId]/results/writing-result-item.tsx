@@ -55,9 +55,13 @@ export function WritingResultItem(props: Props) {
   const [score, setScore] = React.useState<WritingScore | null>(initialScore);
   const [grading, setGrading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // True after the first scoring attempt completes (success or error). Lets
+  // us tell "we have not tried yet" apart from "we tried and it errored or
+  // succeeded" — drives the auto-trigger below and the button copy.
+  const [attempted, setAttempted] = React.useState<boolean>(initialScore !== null);
   const empty = studentResponse.trim().length === 0;
 
-  const handleGrade = async () => {
+  const handleGrade = React.useCallback(async () => {
     setError(null);
     setGrading(true);
     try {
@@ -82,8 +86,23 @@ export function WritingResultItem(props: Props) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setGrading(false);
+      setAttempted(true);
     }
-  };
+  }, [attemptId, itemId]);
+
+  // Auto-trigger AI scoring on mount so the results page renders FIPI
+  // breakdowns without a manual click. Skips empty drafts (zero score by
+  // default) and rows that were already graded server-side. The ref
+  // guards against React 18 strict-mode double-effect re-firing.
+  const autoFiredRef = React.useRef(false);
+  React.useEffect(() => {
+    if (autoFiredRef.current) return;
+    if (empty) return;
+    if (score) return;
+    autoFiredRef.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void handleGrade();
+  }, [empty, score, handleGrade]);
 
   return (
     <li className="space-y-2 py-3">
@@ -105,7 +124,9 @@ export function WritingResultItem(props: Props) {
             ? `${score.total}/${score.max}`
             : empty
               ? `0/${maxScore}`
-              : `Ожидает AI · max ${maxScore}`}
+              : grading
+                ? `Оцениваем AI · max ${maxScore}`
+                : `Ожидает AI · max ${maxScore}`}
         </div>
       </div>
 
@@ -139,9 +160,13 @@ export function WritingResultItem(props: Props) {
             onClick={handleGrade}
           >
             <Sparkles className="mr-2 h-4 w-4" />
-            {grading ? "Оцениваем…" : "Оценить AI (FIPI рубрика)"}
+            {grading
+              ? "Оцениваем AI (K1–K5)…"
+              : attempted
+                ? "Повторить оценку AI"
+                : "Оценить AI (FIPI рубрика)"}
           </Button>
-          {error && <span className="text-xs text-red-600">{error}</span>}
+          {error && <span className="text-xs text-red-600">⚠ {error}</span>}
         </div>
       )}
 
