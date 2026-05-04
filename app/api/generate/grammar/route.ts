@@ -12,10 +12,7 @@ import {
   MAX_BATCH,
   MIN_BATCH,
 } from "@/lib/generators/types";
-import {
-  getGrammarDescriptors,
-  taskTemplateCode,
-} from "@/lib/grammar/descriptors";
+import { taskTemplateCode } from "@/lib/grammar/descriptors";
 import { isSupportedExamCode } from "@/lib/exams";
 import { GRAMMAR_GENERATE_PROMPT } from "@/lib/prompts";
 
@@ -71,17 +68,6 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  // OGE doesn't have lexical_mc; EGE has all three. Reject unsupported
-  // (examCode, type) combinations BEFORE we spend an OpenAI call.
-  const descriptor = getGrammarDescriptors(examCode).find(
-    (d) => d.type === type,
-  );
-  if (!descriptor) {
-    return NextResponse.json(
-      { error: `Grammar type "${type}" is not supported for ${examCode}.` },
-      { status: 400 },
-    );
-  }
 
   const itemSchema =
     type === "transform"
@@ -124,34 +110,17 @@ export async function POST(req: Request) {
     );
   }
 
-  // Persist with source = "ai_generated". Guarded so a DB failure
-  // (e.g. seeds not run, transient connectivity) reports usefully
-  // instead of leaking a generic 500 — the AI generation has already
-  // succeeded at this point and burning that work on a vague error
-  // is the worst possible UX.
+  // Persist with source = "ai_generated".
   const code = taskTemplateCode(examCode, type);
-  let result;
-  try {
-    result = await persistGeneratedItems({
-      section: "grammar",
-      taskTemplateCode: code,
-      items: generated.map((g) => ({
-        stimulusText: g.stimulusText,
-        correctAnswers: g.answer,
-        metadata: g.metadata,
-      })),
-    });
-  } catch (err) {
-    return NextResponse.json(
-      {
-        error:
-          err instanceof Error
-            ? `Persist failed: ${err.message}`
-            : "Failed to save generated items",
-      },
-      { status: 500 },
-    );
-  }
+  const result = await persistGeneratedItems({
+    section: "grammar",
+    taskTemplateCode: code,
+    items: generated.map((g) => ({
+      stimulusText: g.stimulusText,
+      correctAnswers: g.answer,
+      metadata: g.metadata,
+    })),
+  });
 
   return NextResponse.json({
     inserted: result.inserted,

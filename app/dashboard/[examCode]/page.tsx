@@ -11,6 +11,7 @@ import {
 import {
   EXAM_DISPLAY,
   getMockMode,
+  getProgressMode,
   getSections,
   isSupportedExamCode,
 } from "@/lib/exams";
@@ -33,6 +34,7 @@ export default async function ExamSectionsPage({
   const exam = EXAM_DISPLAY[examCode];
   const sections = getSections(examCode);
   const mock = getMockMode(examCode);
+  const progress = getProgressMode(examCode);
 
   return (
     <div className="space-y-6">
@@ -55,6 +57,7 @@ export default async function ExamSectionsPage({
           <SectionCard key={s.kind} {...s} />
         ))}
         <SectionCard {...mock} />
+        <SectionCard {...progress} />
       </div>
     </div>
   );

@@ -127,36 +127,16 @@ export async function POST(req: Request) {
     );
   }
 
-  // Guard the persist call so a DB issue surfaces as a useful 500
-  // instead of a generic crash AFTER we've already paid for the AI
-  // generation. Mirrors the grammar route.
   const code = readingTaskTemplateCode(examCode, descriptor.codeSuffix);
-  let result;
-  try {
-    result = await persistGeneratedItems({
-      section: "reading",
-      taskTemplateCode: code,
-      items: generated.map((g) => ({
-        stimulusText: g.question,
-        correctAnswers: g.answer,
-        // Spread g.metadata FIRST so passage cannot be silently
-        // overwritten if a future schema change loosens the metadata
-        // shape. (Today GeneratorMetadataSchema strips unknown keys,
-        // so this is defence-in-depth.)
-        metadata: { ...g.metadata, passage: g.passage },
-      })),
-    });
-  } catch (err) {
-    return NextResponse.json(
-      {
-        error:
-          err instanceof Error
-            ? `Persist failed: ${err.message}`
-            : "Failed to save generated items",
-      },
-      { status: 500 },
-    );
-  }
+  const result = await persistGeneratedItems({
+    section: "reading",
+    taskTemplateCode: code,
+    items: generated.map((g) => ({
+      stimulusText: g.question,
+      correctAnswers: g.answer,
+      metadata: { passage: g.passage, ...g.metadata },
+    })),
+  });
 
   return NextResponse.json({
     inserted: result.inserted,
