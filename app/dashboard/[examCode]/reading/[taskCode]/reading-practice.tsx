@@ -189,7 +189,7 @@ export function ReadingPractice({
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
-        setExplanation((prev) => prev + decoder.decode(value));
+        setExplanation((prev) => prev + decoder.decode(value, { stream: true }));
       }
     } catch (err) {
       setExplanation(
