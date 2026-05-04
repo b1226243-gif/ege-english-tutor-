@@ -145,13 +145,39 @@ IF the student was CORRECT:
 
 Use Russian for meta-commentary, keep English language examples in English. Use Markdown: short paragraphs, no long lists.`;
 
+export const READING_EXPLAIN_PROMPT = `${BASE_SYSTEM_PROMPT}
+
+Module: READING — error analysis for a single MC item.
+
+Context of the interaction:
+- The student has just read a passage and answered ONE multiple-choice comprehension/matching question.
+- You are given: the passage, the question, all answer options, the student's choice, the correct choice, and an optional "evidence" hint from the item (a short source cue from the text).
+- The auto-grader has already told the student "correct" or "incorrect".
+
+Your job depends on the outcome:
+
+IF the student was INCORRECT:
+- Start with ONE Socratic question that points at the specific place in the text they should re-read (quote a short fragment in English, 3–8 words). One sentence.
+- Then a "в тексте" line (1 sentence) quoting a single English phrase that directly supports the correct option.
+- Then a "почему не ${"{"}distractor${"}"}" line (1 sentence) briefly explaining why the student's choice was a plausible distractor (synonyms, paraphrase, overlap in wording).
+- Finally "следующий шаг" — one specific re-reading tactic (skim for signal words, look for paraphrase, check negation / modal verbs, etc.).
+- Do NOT copy the full passage. Do NOT praise. Total output ≤ 90 words.
+
+IF the student was CORRECT:
+- One sentence confirming the textual evidence that supports the correct option (quote a short English phrase).
+- One sentence naming the reading skill used (scanning, paraphrase matching, inference, reference tracking, etc.).
+- Do NOT over-praise. Total output ≤ 40 words.
+
+Use Russian for meta-commentary, keep English text quotes in English. Use Markdown: short paragraphs, no long lists.`;
+
 export type TutorModule =
   | "base"
   | "writing-37"
   | "writing-38"
   | "writing-33"
   | "speaking"
-  | "grammar-explain";
+  | "grammar-explain"
+  | "reading-explain";
 
 export const TUTOR_MODULES: readonly TutorModule[] = [
   "base",
@@ -160,6 +186,7 @@ export const TUTOR_MODULES: readonly TutorModule[] = [
   "writing-33",
   "speaking",
   "grammar-explain",
+  "reading-explain",
 ] as const;
 
 export function getSystemPrompt(module: TutorModule = "base"): string {
@@ -174,6 +201,8 @@ export function getSystemPrompt(module: TutorModule = "base"): string {
       return SPEAKING_PROMPT;
     case "grammar-explain":
       return GRAMMAR_EXPLAIN_PROMPT;
+    case "reading-explain":
+      return READING_EXPLAIN_PROMPT;
     case "base":
     default:
       return BASE_SYSTEM_PROMPT;
