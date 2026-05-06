@@ -19,7 +19,8 @@
     "listening:generate-audio": "tsx scripts/generate-listening-audio.ts",
     "db:seed:speaking": "tsx scripts/seed-speaking.ts",
     "db:seed:writing": "tsx scripts/seed-writing.ts",
-    "db:import:fipi": "tsx scripts/import-fipi.ts"
+    "db:import:fipi": "tsx scripts/import-fipi.ts",
+    "fipi:parse": "tsx scripts/parse-fipi.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.53",
