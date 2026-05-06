@@ -9,7 +9,7 @@ import type { ExamCode, SectionKind } from "@/lib/db/schema";
  * can render without awaiting a DB round-trip on every request.
  */
 
-export const SUPPORTED_EXAM_CODES = ["ege_en", "oge_en"] as const;
+export const SUPPORTED_EXAM_CODES = ["ege_en", "oge_en", "ielts"] as const;
 export type SupportedExamCode = (typeof SUPPORTED_EXAM_CODES)[number];
 
 export const EXAM_DISPLAY: Record<SupportedExamCode, {
@@ -35,6 +35,14 @@ export const EXAM_DISPLAY: Record<SupportedExamCode, {
     description:
       "Основной государственный экзамен. 5 секций, письменная часть 120 минут + устная 15 минут. Максимум 68 первичных баллов.",
   },
+  ielts: {
+    code: "ielts",
+    displayName: "IELTS Academic",
+    shortName: "IELTS",
+    grade: "interlevel",
+    description:
+      "International English Language Testing System (Academic). 4 секции, ~2ч 45 мин. Шкала 0–9 band по каждой секции и Overall band. Скаффолд — банк наполняется.",
+  },
 };
 
 export function isSupportedExamCode(
@@ -57,6 +65,50 @@ export function getSections(
   examCode: SupportedExamCode,
 ): SectionDescriptor[] {
   const base = `/dashboard/${examCode}`;
+  if (examCode === "ielts") {
+    // IELTS Academic structure: 4 sections, no separate Grammar block
+    // (lexis/grammar are folded into Writing & Speaking band descriptors).
+    // All four are scaffolded — the underlying pages render an empty-bank
+    // placeholder until the IELTS task templates and items are seeded.
+    return [
+      {
+        kind: "listening",
+        displayName: "Listening",
+        description:
+          "4 sections, 40 questions, ~30 мин. Note completion, multiple choice, matching.",
+        href: `${base}/listening`,
+        status: "planned",
+        plannedIn: "банк в разработке",
+      },
+      {
+        kind: "reading",
+        displayName: "Reading",
+        description:
+          "3 academic passages, 40 questions, 60 мин. T/F/NG, matching headings, MCQ.",
+        href: `${base}/reading`,
+        status: "planned",
+        plannedIn: "банк в разработке",
+      },
+      {
+        kind: "writing",
+        displayName: "Writing",
+        description:
+          "Task 1 — описание графика (150+ слов), Task 2 — эссе (250+ слов). 60 мин.",
+        href: `${base}/writing`,
+        status: "planned",
+        plannedIn: "рубрики TR/CC/LR/GRA в разработке",
+      },
+      {
+        kind: "speaking",
+        displayName: "Speaking",
+        description:
+          "Part 1 — интервью, Part 2 — cue card 2 мин, Part 3 — дискуссия. 11–14 мин.",
+        href: `${base}/speaking`,
+        status: "planned",
+        plannedIn: "рубрики FC/LR/GRA/P в разработке",
+      },
+    ];
+  }
   return [
     {
       kind: "reading",
@@ -123,6 +175,17 @@ export type ExtraPracticeMode = {
 export function getMockMode(
   examCode: SupportedExamCode,
 ): ExtraPracticeMode {
+  if (examCode === "ielts") {
+    return {
+      kind: "mock",
+      displayName: "Mock test — таймированный IELTS",
+      description:
+        "IELTS Academic full mock (Listening 30 мин · Reading 60 мин · Writing 60 мин · Speaking 14 мин). Появится после наполнения банка и подключения IELTS-рубрик.",
+      href: `/dashboard/${examCode}/mock`,
+      status: "planned",
+      plannedIn: "в разработке",
+    };
+  }
   return {
     kind: "mock",
     displayName: "Mock Exam — таймированный пробник",
@@ -171,6 +234,12 @@ export type WritingTaskConfig = {
 export function getWritingTasks(
   examCode: SupportedExamCode,
 ): WritingTaskConfig[] {
+  if (examCode === "ielts") {
+    // IELTS writing has a different rubric (TR/CC/LR/GRA) and doesn't fit
+    // the FIPI-style WritingTaskConfig shape used by /api/chat. Return
+    // empty until the IELTS rubric module lands.
+    return [];
+  }
   if (examCode === "ege_en") {
     return [
       {

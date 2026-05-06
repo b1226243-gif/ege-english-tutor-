@@ -403,6 +403,8 @@ const SEED: SeedBank = {
       },
     ],
   },
+  // IELTS Writing descriptors and items will land with the IELTS rubric PR.
+  ielts: {},
 };
 
 function slugHash(slug: string): string {

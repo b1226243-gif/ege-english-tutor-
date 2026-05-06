@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { auth } from "@/auth";
-import { isSupportedExamCode } from "@/lib/exams";
+import { getMockMode, isSupportedExamCode } from "@/lib/exams";
 import { buildMockPlan } from "@/lib/mock/plan";
 import { startMockAttempt } from "@/lib/mock/persistence";
 
@@ -34,6 +34,18 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { error: "examCode must be 'ege_en' or 'oge_en'" },
       { status: 400 },
+    );
+  }
+
+  // Refuse to start a mock attempt for exams whose mock mode is still
+  // scaffolded (IELTS today). Matches the planned-state UI on the mock
+  // landing page.
+  if (getMockMode(examCode).status === "planned") {
+    return NextResponse.json(
+      {
+        error: `Mock exam for ${examCode} is not yet available.`,
+      },
+      { status: 503 },
     );
   }
 

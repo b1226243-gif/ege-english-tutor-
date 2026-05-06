@@ -12,6 +12,11 @@ import type { ReadingTaskDescriptor } from "@/lib/reading/types";
 export function getReadingDescriptors(
   examCode: SupportedExamCode,
 ): ReadingTaskDescriptor[] {
+  if (examCode === "ielts") {
+    // IELTS reading descriptors (T/F/NG, matching headings, MCQ across
+    // 3 academic passages) will land with the IELTS bank PR.
+    return [];
+  }
   if (examCode === "ege_en") {
     return [
       {

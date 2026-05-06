@@ -917,6 +917,8 @@ const SEED: SeedBank = {
       },
     ],
   },
+  // IELTS Reading descriptors and items will land in the IELTS bank PR.
+  ielts: {},
 };
 
 /** FIPI task number where this descriptor begins. */

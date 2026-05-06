@@ -79,6 +79,17 @@ const TIME_BUDGET_SECONDS: Record<
     // ОГЭ speaking — 90+120 + 240 + 90+120 = 660s ≈ 11 min, padded to 15 min.
     speaking: 15 * 60,
   },
+  // IELTS Academic — placeholder budgets to satisfy the type. Mock mode
+  // for IELTS is gated as `status: "planned"` in `getMockMode()` and the
+  // mock landing page refuses to start an attempt for IELTS, so these
+  // values are never read at runtime today.
+  ielts: {
+    listening: 30 * 60,
+    reading: 60 * 60,
+    grammar: 0,
+    writing: 60 * 60,
+    speaking: 14 * 60,
+  },
 };
 
 const SECTION_DISPLAY_NAMES: Record<MockSectionKind, string> = {
