@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "examCode": "oge_en",
+  "source": "example_demo_v0",
+  "sections": [
+    {
+      "section": "grammar",
+      "taskTemplateCode": "oge_en.grammar.word_formation",
+      "items": [
+        {
+          "stimulusText": "Astronomers have made a remarkable ___ (DISCOVER) about the ice on Mars: it appears to be much thicker than previously believed.",
+          "answer": {
+            "type": "word_formation",
+            "base": "DISCOVER",
+            "answer": "DISCOVERY",
+            "alternatives": [],
+            "pos": "noun"
+          },
+          "metadata": { "topic": "noun_from_verb", "difficulty": "easy" }
+        },
+        {
+          "stimulusText": "The new bridge proved to be far more ___ (USE) than the old ferry crossing for daily commuters.",
+          "answer": {
+            "type": "word_formation",
+            "base": "USE",
+            "answer": "USEFUL",
+            "alternatives": [],
+            "pos": "adjective"
+          },
+          "metadata": { "topic": "adjective_suffix", "difficulty": "easy" }
+        },
+        {
+          "stimulusText": "The teenagers' ___ (NOISE) behaviour during the museum tour annoyed several other visitors.",
+          "answer": {
+            "type": "word_formation",
+            "base": "NOISE",
+            "answer": "NOISY",
+            "alternatives": [],
+            "pos": "adjective"
+          },
+          "metadata": { "topic": "adjective_suffix", "difficulty": "easy" }
+        },
+        {
+          "stimulusText": "Although she stumbled twice, the gymnast finished her routine ___ (SUCCESS) and was awarded a personal best score.",
+          "answer": {
+            "type": "word_formation",
+            "base": "SUCCESS",
+            "answer": "SUCCESSFULLY",
+            "alternatives": [],
+            "pos": "adverb"
+          },
+          "metadata": { "topic": "adverb_suffix", "difficulty": "medium" }
+        }
+      ]
+    }
+  ]
+}

@@ -30,12 +30,24 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files
 .env*
+!.env.example
 
 # vercel
 .vercel
 
+# generated listening audio (run `pnpm listening:generate-audio` to (re)create)
+/public/audio/listening/*.mp3
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+
+
+# Local test artifacts and verification scripts
+test-plan*.md
+test-report*.md
+scripts/verify-*.ts
+scripts/baseline.ts
