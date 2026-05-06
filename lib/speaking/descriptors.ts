@@ -229,6 +229,12 @@ const OGE_DESCRIPTORS: SpeakingTaskDescriptor[] = [
 export function getSpeakingDescriptors(
   examCode: SupportedExamCode,
 ): SpeakingTaskDescriptor[] {
+  if (examCode === "ielts") {
+    // IELTS speaking (Part 1 interview / Part 2 cue card / Part 3
+    // discussion) uses different rubrics (FC, LR, GRA, P) and will
+    // land with the IELTS rubric PR.
+    return [];
+  }
   return examCode === "ege_en" ? EGE_DESCRIPTORS : OGE_DESCRIPTORS;
 }
 

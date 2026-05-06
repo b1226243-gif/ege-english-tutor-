@@ -9,6 +9,11 @@ import type { GrammarTaskDescriptor } from "@/lib/grammar/types";
 export function getGrammarDescriptors(
   examCode: SupportedExamCode,
 ): GrammarTaskDescriptor[] {
+  if (examCode === "ielts") {
+    // IELTS doesn't have a stand-alone Grammar & Vocabulary section —
+    // grammar/lexis are scored as part of Writing & Speaking.
+    return [];
+  }
   if (examCode === "ege_en") {
     return [
       {

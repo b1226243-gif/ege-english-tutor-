@@ -139,6 +139,50 @@ const OGE_SECTIONS: SectionSeed[] = [
   },
 ];
 
+// ────────────── IELTS Academic ──────────────
+// 4 sections, ~2h 45min total. Bands 0–9 per section + Overall band.
+// We store band * 10 in `maxScore` (so 9.0 = 90) to keep the integer
+// scoring infra usable; rubrics will round to the nearest 0.5 band when
+// they land.
+const IELTS_SECTIONS: SectionSeed[] = [
+  {
+    kind: "listening",
+    orderIdx: 1,
+    displayName: "Listening",
+    description: "4 sections, 40 questions. Single play, ~30 min + 10 min transfer.",
+    timeLimitSeconds: 30 * 60,
+    maxScore: 90,
+    config: { questionCount: 40, listeningPlayCount: 1, scoring: "ielts_band" },
+  },
+  {
+    kind: "reading",
+    orderIdx: 2,
+    displayName: "Reading",
+    description: "3 academic passages, 40 questions. 60 min.",
+    timeLimitSeconds: 60 * 60,
+    maxScore: 90,
+    config: { questionCount: 40, scoring: "ielts_band" },
+  },
+  {
+    kind: "writing",
+    orderIdx: 3,
+    displayName: "Writing",
+    description: "Task 1 (chart description, 150+ words) + Task 2 (essay, 250+ words). 60 min.",
+    timeLimitSeconds: 60 * 60,
+    maxScore: 90,
+    config: { taskNumbers: [1, 2], scoring: "ielts_band", criteria: ["TR", "CC", "LR", "GRA"] },
+  },
+  {
+    kind: "speaking",
+    orderIdx: 4,
+    displayName: "Speaking",
+    description: "Part 1 — interview, Part 2 — cue card 2 min, Part 3 — discussion. 11–14 min.",
+    timeLimitSeconds: 14 * 60,
+    maxScore: 90,
+    config: { partCount: 3, scoring: "ielts_band", criteria: ["FC", "LR", "GRA", "P"] },
+  },
+];
+
 const EXAM_SEEDS: ExamSeed[] = [
   {
     code: "ege_en",
@@ -151,6 +195,13 @@ const EXAM_SEEDS: ExamSeed[] = [
     displayName: "ОГЭ по английскому",
     description: "Основной государственный экзамен, 9 класс. FIPI 2024/25.",
     sections: OGE_SECTIONS,
+  },
+  {
+    code: "ielts",
+    displayName: "IELTS Academic",
+    description:
+      "International English Language Testing System (Academic). Scaffold — task templates and item banks land in follow-up PRs.",
+    sections: IELTS_SECTIONS,
   },
 ];
 

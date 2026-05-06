@@ -12,6 +12,11 @@ import type { ListeningTaskDescriptor } from "@/lib/listening/types";
 export function getListeningDescriptors(
   examCode: SupportedExamCode,
 ): ListeningTaskDescriptor[] {
+  if (examCode === "ielts") {
+    // IELTS listening descriptors (note completion / matching / MCQ)
+    // will land with the IELTS bank PR.
+    return [];
+  }
   if (examCode === "ege_en") {
     return [
       {

@@ -637,6 +637,8 @@ const SEED: SeedBank = {
       },
     ],
   },
+  // IELTS doesn't have a stand-alone Grammar & Vocabulary section.
+  ielts: {},
 };
 
 // FIPI task-number ranges per exam, used on the `task_template` row.

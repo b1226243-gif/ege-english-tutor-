@@ -269,6 +269,8 @@ const SEED: SeedBank = {
       },
     ],
   },
+  // IELTS Speaking descriptors and items will land in the IELTS bank PR.
+  ielts: {},
 };
 
 function slugHash(slug: string): string {

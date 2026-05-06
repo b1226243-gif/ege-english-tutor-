@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { SectionKind } from "@/lib/db/schema";
+import type { SupportedExamCode } from "@/lib/exams";
 import type { SpeakingFormat } from "@/lib/speaking/types";
 import type { WritingFormat } from "@/lib/writing/descriptors";
 
@@ -171,7 +172,7 @@ export type MockSectionPlan = {
 };
 
 export type MockPlan = {
-  examCode: "ege_en" | "oge_en";
+  examCode: SupportedExamCode;
   /** Hard total time limit for the whole mock, seconds. */
   totalSeconds: number;
   sections: MockSectionPlan[];
@@ -288,7 +289,7 @@ export type MockSectionResult = {
 
 export type MockResults = {
   attemptId: string;
-  examCode: "ege_en" | "oge_en";
+  examCode: SupportedExamCode;
   startedAt: string;
   completedAt: string | null;
   durationSeconds: number;

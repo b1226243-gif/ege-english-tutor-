@@ -58,13 +58,13 @@ export default function DashboardIndex() {
         <Card className="h-full border-dashed opacity-70">
           <CardHeader>
             <CardTitle className="flex items-baseline justify-between gap-2">
-              <span>IELTS · TOEFL · Cambridge</span>
+              <span>TOEFL · Cambridge</span>
               <span className="text-xs font-normal text-zinc-500">soon</span>
             </CardTitle>
-            <CardDescription>Международные экзамены</CardDescription>
+            <CardDescription>Другие международные экзамены</CardDescription>
           </CardHeader>
           <CardContent className="text-sm text-zinc-500">
-            Добавим после завершения курса подготовки к ЕГЭ / ОГЭ.
+            Подключим после полной интеграции IELTS Academic.
           </CardContent>
         </Card>
       </div>

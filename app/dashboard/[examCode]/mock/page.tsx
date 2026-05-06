@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { db } from "@/lib/db";
 import { attempts as attemptsTable } from "@/lib/db/schema";
-import { EXAM_DISPLAY, isSupportedExamCode } from "@/lib/exams";
+import { EXAM_DISPLAY, getMockMode, isSupportedExamCode } from "@/lib/exams";
 import { MockStartButton } from "./mock-start-button";
 import { and, desc, eq } from "drizzle-orm";
 
@@ -36,6 +36,53 @@ export default async function MockLandingPage({
 
   const session = await auth();
   const exam = EXAM_DISPLAY[examCode];
+  const mock = getMockMode(examCode);
+
+  // Mock mode is gated per-exam: scaffolded exams (IELTS today) advertise
+  // their plan in the picker but refuse to start an attempt until rubric
+  // and bank infra is in place. Render a "В разработке" notice instead
+  // of querying attempts that the rest of the page assumes exist.
+  if (mock.status === "planned") {
+    return (
+      <div className="space-y-6">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-xs text-zinc-500">
+            <Link href="/dashboard" className="hover:underline">
+              Экзамены
+            </Link>
+            <span>›</span>
+            <Link href={`/dashboard/${examCode}`} className="hover:underline">
+              {exam.shortName}
+            </Link>
+            <span>›</span>
+            <span>Mock</span>
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {mock.displayName}
+          </h1>
+          <p className="text-sm text-zinc-500">{mock.description}</p>
+        </div>
+        <Card className="border-dashed">
+          <CardHeader>
+            <CardTitle>Скоро</CardTitle>
+            <CardDescription>
+              Пробник для {exam.shortName} ещё не подключён. Сейчас вы можете
+              начать практиковаться по отдельным секциям как только в банке
+              появятся задания.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link
+              href={`/dashboard/${examCode}`}
+              className="text-sm text-blue-600 hover:underline"
+            >
+              ← Вернуться к секциям {exam.shortName}
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   const recent = session?.user?.id
     ? await db()

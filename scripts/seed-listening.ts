@@ -951,6 +951,8 @@ const SEED: SeedBank = {
       },
     ],
   },
+  // IELTS Listening descriptors and items will land in the IELTS bank PR.
+  ielts: {},
 };
 
 function transcriptHash(transcript: string): string {
